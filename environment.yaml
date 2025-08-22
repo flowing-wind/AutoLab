@@ -88,17 +88,26 @@ dependencies:
       - certifi==2025.8.3
       - charset-normalizer==3.4.3
       - click==8.2.1
+      - contourpy==1.3.3
+      - cycler==0.12.1
       - dash==3.2.0
       - flask==3.1.2
+      - fonttools==4.59.1
       - idna==3.10
       - itsdangerous==2.2.0
       - jinja2==3.1.6
+      - kiwisolver==1.4.9
       - markupsafe==3.0.2
+      - matplotlib==3.10.5
       - narwhals==2.1.2
+      - pillow==11.3.0
       - plotly==6.3.0
+      - pyparsing==3.2.3
       - pyvisa==1.15.0
       - requests==2.32.5
       - retrying==1.4.2
+      - scipy==1.16.1
+      - simple-pid==2.0.1
       - urllib3==2.5.0
       - werkzeug==3.1.3
 prefix: D:\anaconda3\envs\Lab-Protocol
