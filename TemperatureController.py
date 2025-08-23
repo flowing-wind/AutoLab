@@ -5,6 +5,7 @@ import numpy as np
 import datetime
 import logging
 import sys
+import os
 
 # ==================== 配置区域 ====================
 DEBUG_MODE = True  # 设置为False使用实际仪器，True使用仿真模式
@@ -17,6 +18,11 @@ logger.setLevel(logging.DEBUG)
 # 创建控制台handler并设置级别
 console_handler = logging.StreamHandler(sys.stdout)
 console_handler.setLevel(logging.DEBUG)
+
+
+log_dir = "./log"
+if not os.path.exists(log_dir):
+    os.makedirs(log_dir)
 
 # 创建文件handler并设置级别
 file_handler = logging.FileHandler(f"./log/print_log_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.log", encoding='utf-8')
