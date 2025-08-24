@@ -95,6 +95,7 @@ class TemperatureController:
         # --- Flags ---
         self.is_stable = False
         self.update_requested = False
+        self.auto_mode = False  # Default to manual mode
 
         logger.info(f"Controller initialized. Target: {self.target_setpoint}K, Stability time: {self.current_stable_time}s")
 
@@ -110,9 +111,26 @@ class TemperatureController:
     def get_schedule_index(self):
         return self.schedule_index
 
+    def get_final_target(self):
+        """Returns the last temperature in the schedule."""
+        return self.setpoint_schedule[-1] if self.setpoint_schedule else 0
+
+    def get_initial_temperature(self):
+        """Returns the first temperature in the schedule."""
+        return self.setpoint_schedule[0] if self.setpoint_schedule else 300
+
+    def set_auto_mode(self, is_auto):
+        """Enable or disable automatic progression through setpoints."""
+        self.auto_mode = is_auto
+        logger.info(f"Auto mode {'enabled' if is_auto else 'disabled'}.")
+
+    def is_auto_mode(self):
+        """Returns True if auto mode is enabled."""
+        return self.auto_mode
+
     def request_update(self):
         self.update_requested = True
-        logger.info("Update requested by user. Will switch to next setpoint when stable.")
+        logger.info("Update requested. Will switch to next setpoint when stable.")
 
     def _update_target_setpoint(self, current_time, stability_threshold=0.5):
         # This method's logic remains largely the same, as it's about schedule management
@@ -129,9 +147,15 @@ class TemperatureController:
                     logger.info(f"System is now stable at {self.target_setpoint}K.")
                     self._on_stabilized()
                 
+                # In auto mode, automatically request an update once stable
+                if self.auto_mode and not self.update_requested:
+                    self.request_update()
+
                 if self.update_requested:
                     if is_last_setpoint:
                         logger.info("All setpoints have been processed.")
+                        # Reset request to prevent re-triggering
+                        self.update_requested = False
                     else:
                         self.schedule_index += 1
                         self.target_setpoint = self.setpoint_schedule[self.schedule_index]

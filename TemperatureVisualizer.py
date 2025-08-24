@@ -82,17 +82,24 @@ class TemperatureMonitor(QMainWindow):
         # Status Bar
         status_bar_layout = QHBoxLayout()
         self.mode_label = QLabel("Mode: Unknown")
+        self.final_target_label = QLabel("Final Target: N/A")
+        self.setpoint_label = QLabel("Current Setpoint: N/A")
         self.temp_label = QLabel("Current Temp: N/A")
-        self.target_label = QLabel("Target Temp: N/A")
         self.stability_label = QLabel("Stability: N/A")
         
         status_bar_layout.addWidget(self.mode_label)
         status_bar_layout.addStretch()
-        status_bar_layout.addWidget(self.target_label)
+        status_bar_layout.addWidget(QLabel("|"))
+        status_bar_layout.addWidget(self.final_target_label)
         status_bar_layout.addStretch()
-        status_bar_layout.addWidget(self.stability_label)
+        status_bar_layout.addWidget(QLabel("|"))
+        status_bar_layout.addWidget(self.setpoint_label)
         status_bar_layout.addStretch()
+        status_bar_layout.addWidget(QLabel("|"))
         status_bar_layout.addWidget(self.temp_label)
+        status_bar_layout.addStretch()
+        status_bar_layout.addWidget(QLabel("|"))
+        status_bar_layout.addWidget(self.stability_label)
         left_layout.addLayout(status_bar_layout)
         
         # Plot Widget
@@ -103,11 +110,14 @@ class TemperatureMonitor(QMainWindow):
         self.plot_widget.addLegend()
         self.plot_widget.showGrid(x=True, y=True)
         self.temp_curve = self.plot_widget.plot([], [], pen=pg.mkPen('b', width=2), name="Live Temperature")
-        self.setpoint_curve = self.plot_widget.plot([], [], pen=pg.mkPen('r', width=2, style=Qt.DashLine), name="Target Temperature")
+        self.setpoint_curve = self.plot_widget.plot([], [], pen=pg.mkPen('r', width=2, style=Qt.DashLine), name="Target Setpoint")
         left_layout.addWidget(self.plot_widget)
         
         # Control Buttons
         controls_layout = QHBoxLayout()
+        self.auto_mode_checkbox = QPushButton("Auto Mode")
+        self.auto_mode_checkbox.setCheckable(True)
+        self.auto_mode_checkbox.clicked.connect(self.on_auto_mode_toggled)
         self.pause_button = QPushButton("Pause")
         self.pause_button.setCheckable(True)
         self.pause_button.clicked.connect(self.on_pause_toggled)
@@ -115,6 +125,7 @@ class TemperatureMonitor(QMainWindow):
         self.clear_button.clicked.connect(self.on_clear_data_clicked)
         self.reset_button = QPushButton("Reset Simulation")
         self.reset_button.clicked.connect(self.on_reset_simulation_clicked)
+        controls_layout.addWidget(self.auto_mode_checkbox)
         controls_layout.addWidget(self.pause_button)
         controls_layout.addWidget(self.clear_button)
         controls_layout.addWidget(self.reset_button)
@@ -179,6 +190,7 @@ class TemperatureMonitor(QMainWindow):
         self._update_plot()
         self._update_system_info_panel(self.controller.get_schedule_index())
         self.mode_label.setText(f"Mode: {'Simulation' if self.controller.is_debug_mode else 'Live Instrument'}")
+        self.final_target_label.setText(f"Final Target: {self.controller.get_final_target():.2f} K")
 
         self.thread.start()
 
@@ -189,11 +201,29 @@ class TemperatureMonitor(QMainWindow):
         self.log_text_edit.append(f"[{timestamp}] {message}")
 
     def on_request_update_clicked(self):
-        """Handles the 'Request Next Setpoint' button click."""
-        self.controller.request_update()
-        self.update_button.setEnabled(False)
-        self.stability_status_label.setText("Status: Update Requested")
-        self.log_message("User requested next setpoint.")
+        """Handles the 'Request Next Setpoint' button click in manual mode."""
+        if not self.controller.is_auto_mode():
+            self.controller.request_update()
+            self.update_button.setEnabled(False)
+            self.stability_status_label.setText("Status: Update Requested")
+            self.log_message("User requested next setpoint.")
+
+    def on_auto_mode_toggled(self):
+        """Handles the auto/manual mode button click."""
+        is_auto = self.auto_mode_checkbox.isChecked()
+        self.controller.set_auto_mode(is_auto)
+        self.log_message(f"Switched to {'Auto' if is_auto else 'Manual'} mode.")
+        
+        # Update button states and text based on mode
+        if is_auto:
+            self.auto_mode_checkbox.setText("Switch to Manual")
+            self.update_button.setText("Auto-advancing...")
+            self.update_button.setEnabled(False) # Disabled in auto mode
+        else:
+            self.auto_mode_checkbox.setText("Switch to Auto")
+            self.update_button.setText("Request Next Setpoint")
+            # Enable button only if system is already stable
+            self.update_button.setEnabled(self.controller.get_stable_status())
 
     def on_pause_toggled(self):
         """Handles the pause/resume button click."""
@@ -238,18 +268,23 @@ class TemperatureMonitor(QMainWindow):
         self.temperatures.append(temp)
         self.setpoints.append(setpoint)
 
-        self.stability_label.setText(f"Stable: {is_stable}")
+        self.stability_label.setText(f"Stable: {'Yes' if is_stable else 'No'}")
         if is_stable:
             self.stability_label.setStyleSheet("color: green;")
-            self.stability_status_label.setText("Status: Stable, waiting for user.")
-            self.update_button.setEnabled(True)
+            self.stability_status_label.setText("Status: Stable")
+            if self.controller.is_auto_mode():
+                self.update_button.setEnabled(False)
+                self.stability_status_label.setText("Status: Stable, auto-advancing...")
+            else:
+                self.update_button.setEnabled(True)
+                self.stability_status_label.setText("Status: Stable, waiting for user.")
         else:
             self.stability_label.setStyleSheet("color: orange;")
             self.stability_status_label.setText("Status: Not Stable")
             self.update_button.setEnabled(False)
 
         self.temp_label.setText(f"Current Temp: {temp:.4f} K")
-        self.target_label.setText(f"Target Temp: {setpoint:.4f} K")
+        self.setpoint_label.setText(f"Current Setpoint: {setpoint:.4f} K")
         
         self._update_system_info_panel(schedule_index)
         self._update_plot()
@@ -260,6 +295,19 @@ class TemperatureMonitor(QMainWindow):
             relative_times = [t - self.times[0] for t in self.times]
             self.temp_curve.setData(relative_times, list(self.temperatures))
             self.setpoint_curve.setData(relative_times, list(self.setpoints))
+
+            # Adjust Y-axis range based on the full temperature schedule
+            start_temp = self.controller.get_initial_temperature()
+            final_temp = self.controller.get_final_target()
+            
+            # Ensure the range is logical
+            min_val = min(start_temp, final_temp)
+            max_val = max(start_temp, final_temp)
+            
+            padding = (max_val - min_val) * 0.1  # 10% padding
+            
+            # Set the visible range, ensuring padding is not zero
+            self.plot_widget.setYRange(min_val - padding, max_val + padding if padding > 0 else max_val + 1)
 
     def closeEvent(self, event):
         """Ensures the background thread is stopped when the window is closed."""
