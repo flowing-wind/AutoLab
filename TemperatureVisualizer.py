@@ -15,6 +15,9 @@ from PyQt5.QtCore import QObject, QThread, pyqtSignal, Qt
 import pyqtgraph as pg
 import TemperatureController
 
+# Add qt_material import
+import qt_material
+
 # ==================== Worker Thread ====================
 class Worker(QObject):
     """
@@ -45,7 +48,7 @@ class Worker(QObject):
     def set_paused(self, paused):
         """Pauses or resumes the simulation loop."""
         self._is_paused = paused
-        self.log_generated.emit(f"Simulation {'paused' if paused else 'resumed'}.")
+        self.log_generated.emit(f"Simulation {('paused' if paused else 'resumed')}.")
 
     def stop(self):
         """Stops the worker loop."""
@@ -306,23 +309,31 @@ class TemperatureMonitor(QMainWindow):
 
         self.stability_timer_label.setText(f"Time Stable: {stable_duration:.1f}s")
 
-        if is_stable:
+        # Determine GUI display status: "Stable" if timer is running and temp is within range
+        is_display_stable_now = (stable_duration > 0) and (abs(temp - setpoint) <= 1.0)
+
+        if is_display_stable_now:
             self.stability_status_label.setText("Status: Stable")
             self.stability_status_label.setStyleSheet("color: green;")
-            if self.controller.is_auto_mode():
-                self.update_button.setEnabled(False)
-                self.stability_status_label.setText("Status: Stable, auto-advancing...")
-            else:
-                self.update_button.setEnabled(True)
-                self.stability_status_label.setText("Status: Stable, waiting for user.")
         else:
             self.stability_status_label.setText("Status: Not Stable")
             self.stability_status_label.setStyleSheet("color: orange;")
+
+        # Handle the update button and potential override of status label based on controller's `is_stable`
+        if is_stable: # This `is_stable` comes from the controller, based on `self.current_stable_time`
+            if self.controller.is_auto_mode():
+                self.update_button.setEnabled(False)
+                self.stability_status_label.setText("Status: Stable, auto-advancing...") # Override for auto-advance
+            else:
+                self.update_button.setEnabled(True)
+                self.stability_status_label.setText("Status: Stable, waiting for user.") # Override for user request
+        else:
             self.update_button.setEnabled(False)
+            # If not stable by controller's definition, and not auto-advancing, the display_stable_now status holds.
 
         self.temp_label.setText(f"Current Temp: {temp:.4f} K")
         self.setpoint_label.setText(f"Current Setpoint: {setpoint:.4f} K")
-        
+
         self._update_system_info_panel(schedule_index)
         self._update_plot()
 
@@ -378,3 +389,4 @@ if __name__ == '__main__':
     window = TemperatureMonitor()
     window.show()
     sys.exit(app.exec_())
+
