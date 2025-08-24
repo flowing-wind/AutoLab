@@ -1,232 +1,193 @@
+# File:      TemperatureController.py
+# Time:      2025-08-24
+# Author:    Fuuraiko
+# Desc:      This file defines the main controller for the temperature regulation system.
+#            It manages the PID control loop, handles setpoint scheduling, and logs system events.
+
 import CryoSystem
 import csv
 import time
-import numpy as np
 import datetime
 import logging
 import sys
 import os
 
-# ==================== 配置区域 ====================
-DEBUG_MODE = True  # 设置为False使用实际仪器，True使用仿真模式
+# ==================== Configuration ====================
+DEBUG_MODE = True  # Set to False to use real instruments, True for simulation mode
 
-# ==================== 日志配置 ====================
-# 创建logger
+# ==================== Logging Setup ====================
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
-# 创建控制台handler并设置级别
+# Create console handler and set level
 console_handler = logging.StreamHandler(sys.stdout)
 console_handler.setLevel(logging.DEBUG)
-
 
 log_dir = "./log"
 if not os.path.exists(log_dir):
     os.makedirs(log_dir)
 
-# 创建文件handler并设置级别
-file_handler = logging.FileHandler(f"./log/print_log_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.log", encoding='utf-8')
+# Create file handler and set level
+file_handler = logging.FileHandler(f"./log/controller_log_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.log", encoding='utf-8')
 file_handler.setLevel(logging.INFO)
 
-# 创建formatter
+# Create formatter
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
-# 添加formatter到handler
+# Add formatter to handlers
 console_handler.setFormatter(formatter)
 file_handler.setFormatter(formatter)
 
-# 添加handler到logger
+# Add handlers to logger
 logger.addHandler(console_handler)
 logger.addHandler(file_handler)
 
-# ==================== 全局变量 ====================
-sim_system = None
-controller = None
+# ==================== Default Parameters & CSV Reader ====================
 
+DEFAULT_SETPOINTS = [300, 298, 295]
+DEFAULT_STABLE_TIMES = [10, 10, 10]
 
-# ==================== 默认参数和CSV读取 ====================
-
-DEFAULT_SETPOINT_SCHEDULE = [300, 298, 295]
-DEFAULT_SETPOINT_STABLETIMES = [10, 10, 10]
-def ReadCSV(filename):
-    """从CSV文件中读取设定点计划和对应的稳定时间"""
-    setpoint_schedule = DEFAULT_SETPOINT_SCHEDULE.copy()
-    setpoint_stabletimes = DEFAULT_SETPOINT_STABLETIMES.copy()
+def read_schedule_from_csv(filename):
+    """Reads the setpoint schedule and corresponding stability times from a CSV file."""
+    setpoints = DEFAULT_SETPOINTS.copy()
+    stable_times = DEFAULT_STABLE_TIMES.copy()
     
     try:
         with open(filename, 'r', newline='') as csvfile:
             reader = csv.reader(csvfile)
             for row in reader:
-                if len(row) >= 2 and row[0].lower() == 'setpoint_schedule':
+                if len(row) >= 2 and row[0].lower() == 'setpoints':
                     try:
-                        setpoint_schedule = [float(x.strip()) for x in row[1:] if x.strip()]
+                        setpoints = [float(x.strip()) for x in row[1:] if x.strip()]
                     except ValueError:
-                        logger.warning(f"无法解析设定点计划: {row[1:]}, 使用默认值")
+                        logger.warning(f"Could not parse setpoint schedule: {row[1:]}. Using default values.")
                 
-                elif len(row) >= 2 and row[0].lower() == 'setpoint_stabletime':
+                elif len(row) >= 2 and row[0].lower() == 'stable_times':
                     try:
-                        setpoint_stabletimes = [float(x.strip()) for x in row[1:] if x.strip()]
+                        stable_times = [float(x.strip()) for x in row[1:] if x.strip()]
                     except ValueError:
-                        logger.warning(f"无法解析稳定时间: {row[1:]}, 使用默认值")
+                        logger.warning(f"Could not parse stability times: {row[1:]}. Using default values.")
     
     except FileNotFoundError:
-        logger.warning(f"文件 {filename} 未找到，使用默认参数")
+        logger.warning(f"File {filename} not found. Using default parameters.")
     except Exception as e:
-        logger.warning(f"读取CSV文件时出错: {e}, 使用默认参数")
+        logger.warning(f"Error reading CSV file: {e}. Using default parameters.")
     
-    if len(setpoint_stabletimes) != len(setpoint_schedule):
-        setpoint_stabletimes = [DEFAULT_SETPOINT_STABLETIMES[0]] * len(setpoint_schedule)
+    if len(stable_times) != len(setpoints):
+        logger.warning("Mismatch between number of setpoints and stable times. Using default time for all.")
+        stable_times = [DEFAULT_STABLE_TIMES[0]] * len(setpoints)
     
-    return setpoint_schedule, setpoint_stabletimes
+    return setpoints, stable_times
 
 
-# ==================== 温度控制器 ====================
+# ==================== Temperature Controller Class ====================
 class TemperatureController:
-    """温度控制器，负责PID控制和设定点管理"""
+    """Manages the PID control loop and setpoint schedule."""
     def __init__(self, config_file=None):
-        # 从CSV文件读取配置或使用默认值
+        """
+        Initializes the Temperature Controller.
+
+        Args:
+            config_file (str, optional): Path to the CSV configuration file. Defaults to None.
+        """
         if config_file:
             self.config_file = config_file
-            self.setpoint_schedule, self.setpoint_stabletimes = ReadCSV(config_file)
+            self.setpoint_schedule, self.setpoint_stable_times = read_schedule_from_csv(config_file)
         else:
-            self.setpoint_schedule = DEFAULT_SETPOINT_SCHEDULE.copy()
-            self.setpoint_stabletimes = DEFAULT_SETPOINT_STABLETIMES.copy()
+            self.setpoint_schedule = DEFAULT_SETPOINTS.copy()
+            self.setpoint_stable_times = DEFAULT_STABLE_TIMES.copy()
         
         self.cryo_system = CryoSystem.CryoSystem()
+        self.temperature = self.cryo_system.get_temperature()
         self.integral_sum = 0.0
         self.schedule_index = 0
         self.target_setpoint = self.setpoint_schedule[self.schedule_index]
-        self.current_stabletime = self.setpoint_stabletimes[self.schedule_index]
-        self.stable_start_time = None
-        timestamp = datetime.datetime.now().strftime("%H:%M:%S")
-        logger.info(f"当前温度点为：{self.target_setpoint}K")
-        logger.info(f"稳定时间为：{self.current_stabletime}秒")
-        # 标志位
-        self.STABLE_FLAG = 0
-        self.UPDATE_FLAG = 0
-        self.DEBUG_MODE = True  # 默认使用仿真模式
-
+        self.current_stable_time = self.setpoint_stable_times[self.schedule_index]
+        self.stabilization_start_time = None
         
+        # Flags
+        self.is_stable = False
+        self.update_requested = False
+        self.is_debug_mode = True  # Default to simulation mode
 
-    def set_debug_mode(self, debug_mode):
-        """设置调试模式"""
-        self.DEBUG_MODE = debug_mode
+        logger.info(f"Controller initialized. Target: {self.target_setpoint}K, Stability time: {self.current_stable_time}s")
+
+    def set_debug_mode(self, is_debug):
+        """Sets the debug mode for the controller."""
+        self.is_debug_mode = is_debug
 
     def get_temperature(self):
-        """获取当前温度"""
-        if self.DEBUG_MODE:
-            # 仿真模式
-            return self.update()
-        else:
-            # 实际仪器读取
-            try:
-                # 这里添加实际仪器读取代码
-                return 0.0
-            except Exception as e:
-                logger.error(f"读取温度错误: {e}")
-                return 0.0
+        """Gets the current temperature."""
+        return self.temperature
 
     def get_setpoint(self):
-        """获取当前设定点"""
-        if self.DEBUG_MODE:
-            # 仿真模式
-            return self.target_setpoint
-        else:
-            # 实际仪器读取
-            return 0
+        """Gets the current target setpoint."""
+        return self.target_setpoint
 
-    def get_stable_flag(self):
-        """获取稳定标志"""
-        if self.DEBUG_MODE:
-            # 仿真模式
-            return self.STABLE_FLAG
-        else:
-            # 实际仪器相关功能
-            return 0
+    def get_stable_status(self):
+        """Gets the stability status flag."""
+        return self.is_stable
+    
+    def get_schedule_index(self):
+        """Gets the current index in the setpoint schedule."""
+        return self.schedule_index
 
-    def set_update_flag(self, flag_value):
-        """设置更新标志"""
-        if self.DEBUG_MODE:
-            # 仿真模式
-            self.UPDATE_FLAG = flag_value
-            if flag_value == 1:
-                logger.info("收到更新指令，准备切换到下一个设定点")
+    def request_update(self):
+        """Requests a switch to the next setpoint if the system is stable."""
+        if self.is_debug_mode:
+            self.update_requested = True
+            logger.info("Update requested by user. Will switch to next setpoint when stable.")
         else:
-            # 实际仪器相关功能
+            # Handle real instrument logic here
             pass
 
-    def update_target(self, current_time, stability_threshold=0.5):
-        """更新目标温度，如果需要切换到下一个设定点"""
-        if self.schedule_index < len(self.setpoint_schedule) - 1:
-            current_target = self.setpoint_schedule[self.schedule_index]
+    def _update_target_setpoint(self, current_time, stability_threshold=0.5):
+        """Checks for stability and updates the target setpoint if conditions are met."""
+        is_last_setpoint = self.schedule_index >= len(self.setpoint_schedule) - 1
+
+        if self._is_temperature_stable(self.target_setpoint, stability_threshold):
+            if self.stabilization_start_time is None:
+                self.stabilization_start_time = current_time
+                logger.info(f"Temperature has entered stability range around {self.target_setpoint}K. Starting timer.")
             
-            # 检查是否已经稳定
-            if self.is_temperature_stable(current_target, stability_threshold):
-                if self.stable_start_time is None:
-                    self.stable_start_time = current_time
-                    timestamp = datetime.datetime.now().strftime("%H:%M:%S")
-                    logger.info(f"当前开始稳定计时")
-                elif current_time - self.stable_start_time >= self.current_stabletime:
-                    if self.STABLE_FLAG == 0:
-                        self.STABLE_FLAG = 1
-                        logger.info(f"当前稳定")
-                        self.stable_function()
-                    
-                    if self.UPDATE_FLAG == 1:
+            elif (current_time - self.stabilization_start_time) >= self.current_stable_time:
+                if not self.is_stable:
+                    self.is_stable = True
+                    logger.info(f"System is now stable at {self.target_setpoint}K.")
+                    self._on_stabilized()
+                
+                if self.update_requested:
+                    if is_last_setpoint:
+                        logger.info("All setpoints have been processed.")
+                        # Optional: Add logic to end the process or loop
+                    else:
                         self.schedule_index += 1
                         self.target_setpoint = self.setpoint_schedule[self.schedule_index]
-                        self.current_stabletime = self.setpoint_stabletimes[self.schedule_index]
-                        logger.info(f"更新当前温度点为：{self.target_setpoint}K")
-                        logger.info(f"更新稳定时间为：{self.current_stabletime}秒")
+                        self.current_stable_time = self.setpoint_stable_times[self.schedule_index]
+                        logger.info(f"Switching to next setpoint: {self.target_setpoint}K, Stability time: {self.current_stable_time}s")
 
-                        self.stable_start_time = None
+                        # Reset for next setpoint
+                        self.stabilization_start_time = None
                         self.integral_sum = 0.0
-                        self.STABLE_FLAG = 0
-                        self.UPDATE_FLAG = 0
-            else:
-                timestamp = datetime.datetime.now().strftime("%H:%M:%S")
-                logger.info(f"当前不稳定，{self.temperature}K")
-                self.stable_start_time = None
-                self.STABLE_FLAG = 0
-        elif self.schedule_index == len(self.setpoint_schedule) - 1:
-            if self.stable_start_time is None:
-                self.stable_start_time = current_time
-                logger.info(f"当前开始稳定计时")
-            elif current_time - self.stable_start_time >= self.current_stabletime:
-                if self.STABLE_FLAG == 0:
-                    self.STABLE_FLAG = 1
-                    logger.info(f"当前稳定")
-                    self.stable_function()
-                
-                if self.UPDATE_FLAG == 1:
-                    self.schedule_index += 1
-                    logger.info(f"当前已完成所有")
-                    self.stable_start_time = None
-                    self.integral_sum = 0.0
-                    self.STABLE_FLAG = 0
-                    self.UPDATE_FLAG = 0
-            
-        
-        return self.target_setpoint
+                        self.is_stable = False
+                        self.update_requested = False
+        else:
+            if self.stabilization_start_time is not None:
+                logger.info(f"Temperature left stability range. Resetting timer. Current temp: {self.temperature:.4f}K")
+            self.stabilization_start_time = None
+            self.is_stable = False
     
-    def stable_function(self):
-        # 稳定了以后做的测量操作
-        logger.info("执行稳定后的测量操作")
+    def _on_stabilized(self):
+        """Placeholder for actions to be performed once the temperature is stable."""
+        logger.info("Executing post-stabilization measurement/action.")
         pass
 
-    def is_temperature_stable(self, target_temp, threshold=0.5):
-        """检查当前温度是否在目标温度附近阈值范围内"""
-        if abs(self.temperature - target_temp) <= threshold:
-            return True
-        else:
-            return False
+    def _is_temperature_stable(self, target_temp, threshold=0.5):
+        """Checks if the current temperature is within the threshold of the target."""
+        return abs(self.temperature - target_temp) <= threshold
 
     def update(self):
-        """执行一次完整的控制循环"""
+        """Executes one full control loop cycle."""
         current_time = time.time()
-
-        # 更新系统温度
         self.temperature = self.cryo_system.update_temperature(self.target_setpoint)
-        self.update_target(current_time)
-        
-        return self.temperature
+        self._update_target_setpoint(current_time)

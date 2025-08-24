@@ -1,88 +1,99 @@
+# File:      CryoSystem.py
+# Time:      2025-08-24
+# Author:    Fuuraiko
+# Desc:      This file defines the physical model of the cryogenic system. 
+#            It simulates temperature changes based on cooling power and environmental factors.
+
 import numpy as np
 
-
+# --- Simulation Constants ---
 DEFAULT_KP = -130.0
 DEFAULT_KI = -1.5
 DEFAULT_KD = -600.0
-# ==================== CryoSystem 类 ====================
+
 class CryoSystem:
-    """低温系统物理模型，只负责温度更新"""
+    """
+    Represents the physical model of the cryogenic system.
+    This class is responsible for updating the system's temperature based on various physical parameters.
+    """
     def __init__(self, initial_temp=300.0):
+        """
+        Initializes the cryogenic system.
+
+        Args:
+            initial_temp (float): The starting temperature of the system in Kelvin.
+        """
         self.temperature = initial_temp
         self.cooling_power = 0
         self.filtered_temp = initial_temp
         self.last_filtered_temp = initial_temp
         self.target_setpoint = initial_temp
         
-    
-        self.KP = DEFAULT_KP
-        self.KI = DEFAULT_KI
-        self.KD = DEFAULT_KD
+        # PID parameters
+        self.kp = DEFAULT_KP
+        self.ki = DEFAULT_KI
+        self.kd = DEFAULT_KD
 
-        # 仿真参数
-        self.AMBIENT_TEMP = 300.0
-        self.PARASITIC_HEAT_LOAD = 0.1
-        self.HEAT_LOSS_COEFF = 0.0001
-        self.COOLING_EFFECT_FACTOR = 2.0
-        self.NOISE_LEVEL = 0.1
-        self.FILTER_ALPHA = 0.2
+        # Simulation parameters
+        self.ambient_temp = 300.0
+        self.parasitic_heat_load = 0.1
+        self.heat_loss_coeff = 0.0001
+        self.cooling_effect_factor = 2.0
+        self.noise_level = 0.1
+        self.filter_alpha = 0.2
         self.integral_sum = 0.0
         
-    def update_temperature(self,target_setpoint):
+    def update_temperature(self, target_setpoint):
         """
-        更新系统温度
-        
-        参数:
-            cooling_power: 冷却功率 (0-100)
-            
-        返回:
-            更新后的温度
-        """
+        Updates the system temperature for one time step.
 
-        
+        Args:
+            target_setpoint (float): The target temperature for the current control cycle.
+
+        Returns:
+            float: The new temperature of the system after the update.
+        """
         self.target_setpoint = target_setpoint
-        # 更新目标温度
         
+        # Simulate sensor reading with noise
+        noise = np.random.normal(0, self.noise_level)
+        current_temp_reading = self.temperature + noise
         
-        # 模拟带噪声的传感器读数
-        noise = np.random.normal(0, self.NOISE_LEVEL)
-        current_temp = self.temperature + noise
-        
-        # 对带噪声的读数进行低通滤波
-        self.filtered_temp = (self.FILTER_ALPHA * current_temp) + (1 - self.FILTER_ALPHA) * self.filtered_temp
+        # Apply a low-pass filter to the noisy reading
+        self.filtered_temp = (self.filter_alpha * current_temp_reading) + (1 - self.filter_alpha) * self.filtered_temp
 
-        # 基于平滑后的温度计算PID三项
+        # Calculate PID terms based on the filtered temperature
         error = self.target_setpoint - self.filtered_temp
         
-        # 带抗饱和功能的积分项累积
+        # Accumulate integral term with anti-windup
         if 0 < self.cooling_power < 100:
             self.integral_sum += error * 1.0
         
-        # 微分项计算
+        # Calculate derivative term
         derivative = (self.filtered_temp - self.last_filtered_temp) / 1.0
         
-        # 计算总输出并限制在0-100之间
-        output = (self.KP * error) + (self.KI * self.integral_sum) - (self.KD * derivative)
+        # Calculate total output and clamp it between 0 and 100
+        output = (self.kp * error) + (self.ki * self.integral_sum) - (self.kd * derivative)
         control_output = max(0, min(100, output))
         
-        # 将控制输出应用到物理系统
+        # Apply the control output to the physical system
         self.cooling_power = control_output
         
-        # 更新系统温度
-        radiative_heat_transfer = self.HEAT_LOSS_COEFF * (self.AMBIENT_TEMP - self.temperature)
-        active_cooling = -self.COOLING_EFFECT_FACTOR * self.cooling_power / 100.0
-        self.temperature += (radiative_heat_transfer + self.PARASITIC_HEAT_LOAD + active_cooling) * 1.0
+        # Update the system temperature based on the physics model
+        radiative_heat_transfer = self.heat_loss_coeff * (self.ambient_temp - self.temperature)
+        active_cooling = -self.cooling_effect_factor * self.cooling_power / 100.0
+        self.temperature += (radiative_heat_transfer + self.parasitic_heat_load + active_cooling) * 1.0
         self.temperature = max(0, self.temperature)
         
-        # 更新状态变量用于下一次循环
+        # Update state variables for the next cycle
         self.last_filtered_temp = self.filtered_temp
         
         return self.temperature
     
     def get_temperature(self):
-        """获取当前温度"""
+        """Returns the current temperature of the system."""
         return self.temperature
     
     def get_filtered_temperature(self):
-        """获取滤波后的温度"""
+        """Returns the filtered temperature of the system."""
         return self.filtered_temp
