@@ -2,27 +2,56 @@
 
 ## Project Goal
 
-To build a robust temperature control and monitoring application. The system should be able to execute a predefined temperature schedule, stabilize at each setpoint, and provide real-time visualization of the process. The application should be easily switchable between a simulation mode for testing and a real mode for controlling hardware.
+To build a robust, modular, and easily extensible temperature control and monitoring application. The system should execute a predefined temperature schedule, provide real-time visualization, and seamlessly switch between simulation and real hardware modes.
 
-## Current Status (After merging 'main' and 'zhuyy')
+## Project Status (Active)
 
 - **Branch:** `gemini`
-- **Core Logic:** The project is based on the `zhuyy` branch, which provides a modular structure with a simulation backend (`CryoSystem.py`), a PID controller (`TemperatureController.py`), and a PyQt5-based GUI (`TemperatureVisualizer.py`).
-- **Functionality:** The application can load a temperature schedule from `config.csv`, simulate the cooling process, and visualize the data. It includes a control mechanism based on stability flags.
-- **Known Issues:** The control logic runs in the main GUI thread, which will cause the UI to become unresponsive. The codebase uses Chinese for comments and identifiers, which needs to be refactored.
+- **Architecture:** The project now uses a clean, decoupled architecture. A central `TemperatureController` operates on a hardware abstraction layer (`hardware_api`), allowing it to control either a `SimulatedBridge` or a `VisaBridge` without changing its core logic.
+- **Functionality:** All previous functionalities are preserved. The GUI is fully asynchronous, preventing UI freezes. The codebase is standardized to English and follows PEP 8.
+- **Next Steps:** The `VisaBridge` in `hardware_api/visa.py` is a skeleton and needs to be implemented with real hardware commands.
 
-## Development Plan
+## Changelog
 
-### Part 1: Asynchronous Refactoring
+### 2025-08-24: Architectural Refactoring (Strategy Pattern)
 
-- **Objective:** Prevent the GUI from freezing by moving the long-running simulation task to a separate thread.
-- **Method:** Use PyQt's `QThread` to run the `TemperatureController` in a background worker thread. Communication between the worker and the main GUI thread will be handled safely using signals and slots.
+**Objective:** To implement a clean, scalable architecture that separates control logic from hardware interaction, based on the user's suggestion.
 
-### Part 2: Codebase Refactoring (Adherence to Standards)
+**Changes:**
+1.  **Hardware Abstraction Layer:** Created a new `hardware_api` directory to serve as a hardware abstraction layer (HAL).
+2.  **Defined Common Interface:** Created an abstract base class `AbstractTemperatureBridge` (`hardware_api/base.py`) to define a strict API contract for all hardware implementations.
+3.  **Separated Implementations:**
+    - `SimulatedBridge` (`hardware_api/simulated.py`): Encapsulates the `CryoSystem` simulation logic.
+    - `VisaBridge` (`hardware_api/visa.py`): Provided a ready-to-use skeleton file for implementing real VISA-based hardware control.
+4.  **Decoupled Controller:** Refactored `TemperatureController` to remove all `if/else` debug checks. It now relies entirely on the `AbstractTemperatureBridge` interface and uses a factory pattern in its `__init__` to select the correct bridge (simulated or real) at runtime.
 
-- **Objective:** Align the entire codebase with the agreed-upon development protocol.
-- **Tasks:**
-    1.  **Internationalization:** Convert all comments, identifiers (variables, functions, classes), and UI text to English.
-    2.  **Documentation:** Add standard file headers and comprehensive docstrings to all modules, classes, and functions.
-    3.  **Code Style:** Ensure compliance with the PEP 8 style guide.
-    4.  **Project Docs & Environment:** After refactoring, generate a new `environment.yaml` and update the `README.md`.
+**Outcome:** The new architecture is highly modular, easy to maintain, and simple to extend with new hardware implementations in the future without touching the core control logic.
+
+### 2025-08-24: Asynchronous Refactor & Standardization
+
+- **Asynchronous GUI:** Re-implemented the `TemperatureVisualizer` to run the `TemperatureController` in a separate `QThread`. This resolved UI freezing issues.
+- **Code Standardization:** Translated the entire codebase (variables, comments, UI) to English. Added file headers, docstrings, and ensured PEP 8 compliance.
+- **Unit Testing:** Established a `tests` directory with a basic unit test for the controller.
+- **Documentation:** Updated `README.md` and `environment.yaml`.
+
+## Current Directory Structure
+
+```
+Lab-Protocol/
+├── .gitignore
+├── TemperatureController.py
+├── TemperatureVisualizer.py
+├── config.csv
+├── environment.yaml
+├── GEMINI.md
+├── README.md
+├── hardware_api/
+│   ├── __init__.py
+│   ├── base.py
+│   ├── CryoSystem.py
+│   ├── simulated.py
+│   └── visa.py
+├── log/
+└── tests/
+    └── test_controller.py
+```

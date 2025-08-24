@@ -2,18 +2,18 @@
 
 ## Introduction
 
-This project is a temperature control and monitoring application designed for laboratory environments. It provides a graphical user interface to visualize and manage a cryogenic system's temperature in real-time. The application can run in a simulation mode for development and testing, or be connected to live instruments.
+This project is a temperature control and monitoring application designed for laboratory environments. It provides a graphical user interface to visualize and manage a system's temperature in real-time. 
 
-The core logic is built to be robust and asynchronous, ensuring the user interface remains responsive while the controller manages temperature setpoints and stability in a background process.
+The application is built on a clean, decoupled architecture, featuring a hardware abstraction layer. This allows the core control logic to remain independent from the specific hardware (or simulation) it is controlling. The application's asynchronous design ensures the user interface remains responsive at all times.
 
 ## Features
 
 - **Real-Time Visualization**: Plots live temperature and setpoint data on a graph.
 - **Setpoint Scheduling**: Load a sequence of target temperatures and required stabilization times from an external `config.csv` file.
-- **Stability Control**: Automatically detects when the system temperature has stabilized within a given threshold for a specified time.
+- **Hardware Abstraction Layer (HAL)**: A plug-and-play architecture that separates the main control logic from the hardware interface. Switch between simulation and real hardware by changing a single flag.
 - **Asynchronous Operations**: The control loop runs in a separate thread to keep the GUI from freezing.
-- **Simulation Mode**: A built-in physics model (`CryoSystem.py`) simulates the temperature dynamics for testing without hardware.
-- **Modular & Refactored Code**: The codebase is written in English, follows PEP 8 standards, and is documented with docstrings.
+- **Extensible by Design**: Easily add support for new instruments by creating a new "bridge" class in the `hardware_api` directory.
+- **Ready-to-use Simulation**: Comes with a built-in simulation bridge for full application testing without any hardware.
 - **Unit Testing**: Includes a `tests` module for verifying core functionality.
 
 ## Directory Structure
@@ -21,13 +21,18 @@ The core logic is built to be robust and asynchronous, ensuring the user interfa
 ```
 Lab-Protocol/
 ├── .gitignore
-├── CryoSystem.py           # The physical model for the temperature simulation.
 ├── TemperatureController.py  # The main control logic (PID, scheduling).
 ├── TemperatureVisualizer.py  # The PyQt5 GUI application.
 ├── config.csv              # Configuration file for setpoints and stable times.
 ├── environment.yaml        # Conda environment dependencies.
 ├── GEMINI.md               # Project log and protocol for AI collaboration.
 ├── README.md               # This file.
+├── hardware_api/           # The Hardware Abstraction Layer.
+│   ├── __init__.py
+│   ├── base.py             # Defines the abstract interface for all bridges.
+│   ├── CryoSystem.py       # The physical model for the simulation.
+│   ├── simulated.py        # The bridge for the simulated hardware.
+│   └── visa.py             # A skeleton bridge for real VISA-based hardware.
 ├── log/                    # Directory for runtime log files (auto-generated).
 └── tests/
     └── test_controller.py  # Unit tests for the controller.
@@ -53,7 +58,7 @@ Lab-Protocol/
     python TemperatureVisualizer.py
     ```
 
-4.  **Run Tests (Optional)**: To run the unit tests, navigate to the `tests` directory and run the test file.
+4.  **Run Tests (Optional)**: To run the unit tests, use the following command from the project root:
     ```bash
     python -m unittest discover tests
     ```

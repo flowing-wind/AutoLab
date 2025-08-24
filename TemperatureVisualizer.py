@@ -162,7 +162,7 @@ class TemperatureMonitor(QMainWindow):
     def _setup_thread(self):
         """Creates and starts the background worker thread."""
         config_filename = 'E:\\Projects\\Lab-Protocol\\config.csv'
-        self.controller = TemperatureController.TemperatureController(config_filename)
+        self.controller = TemperatureController.TemperatureController(config_filename, is_debug_mode=TemperatureController.DEBUG_MODE)
         
         self.thread = QThread()
         self.worker = Worker(self.controller)
