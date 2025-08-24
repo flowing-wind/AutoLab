@@ -9,11 +9,27 @@ To build a robust, modular, and easily extensible temperature control and monito
 ## Project Status (Active)
 
 - **Branch:** `gemini`
-- **Architecture:** The project now uses a clean, decoupled architecture. A central `TemperatureController` operates on a hardware abstraction layer (`hardware_api`), allowing it to control either a `SimulatedBridge` or a `VisaBridge` without changing its core logic.
-- **Functionality:** All previous functionalities are preserved. The GUI is fully asynchronous, preventing UI freezes. The codebase is standardized to English and follows PEP 8.
+- **Architecture:** The project uses a clean, decoupled architecture with a hardware abstraction layer.
+- **Functionality:** 
+    - Asynchronous GUI with real-time plotting.
+    - Supports both simulated and real hardware via a strategy pattern.
+    - **New:** Automatic and manual control modes for advancing through temperature setpoints.
+    - **New:** Enhanced UI with clearer status indicators and dynamic plot scaling.
 - **Next Steps:** The `VisaBridge` in `hardware_api/visa.py` is a skeleton and needs to be implemented with real hardware commands.
 
 ## Changelog
+
+### 2025-08-24: GUI Enhancement & Auto Mode
+
+**Objective:** To improve the user interface and add an automatic control mode for unattended operation.
+
+**Changes:**
+1.  **Auto/Manual Mode:** Implemented a toggle button allowing the system to automatically proceed to the next setpoint after stability is achieved.
+2.  **UI Layout:** Redesigned the status bar in `TemperatureVisualizer` to include separators and distinct labels for "Final Target" and "Current Setpoint", improving clarity.
+3.  **Dynamic Plot Scaling:** The Y-axis of the temperature plot now automatically scales to fit the entire range of the temperature schedule (from start to final target), providing a better overview.
+4.  **Configuration Management:** The `config.csv` file is now untracked by Git, allowing for local modifications without affecting the repository.
+
+**Outcome:** The application is now more user-friendly and capable of running a full temperature schedule without manual intervention.
 
 ### 2025-08-24: Architectural Refactoring (Strategy Pattern)
 
@@ -43,7 +59,6 @@ Lab-Protocol/
 ├── .gitignore
 ├── TemperatureController.py
 ├── TemperatureVisualizer.py
-├── config.csv
 ├── environment.yaml
 ├── GEMINI.md
 ├── README.md
@@ -57,6 +72,7 @@ Lab-Protocol/
 └── tests/
     └── test_controller.py
 ```
+*Note: `config.csv` is now untracked by Git.*
 
 ### 2025-08-24: chore: Correct .gitignore
 

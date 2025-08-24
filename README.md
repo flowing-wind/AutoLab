@@ -8,8 +8,11 @@ The application is built on a clean, decoupled architecture, featuring a hardwar
 
 ## Features
 
-- **Real-Time Visualization**: Plots live temperature and setpoint data on a graph.
+- **Real-Time Visualization**: Plots live temperature and setpoint data on a graph. The plot view automatically scales to show the full temperature range of the current schedule.
 - **Setpoint Scheduling**: Load a sequence of target temperatures and required stabilization times from an external `config.csv` file.
+- **Automatic & Manual Control**: 
+    - **Manual Mode**: Manually advance to the next temperature setpoint with the click of a button after the system is stable.
+    - **Auto Mode**: Automatically proceeds through the entire temperature schedule, advancing to the next setpoint as soon as stability is achieved.
 - **Hardware Abstraction Layer (HAL)**: A plug-and-play architecture that separates the main control logic from the hardware interface. Switch between simulation and real hardware by changing a single flag.
 - **Asynchronous Operations**: The control loop runs in a separate thread to keep the GUI from freezing.
 - **Extensible by Design**: Easily add support for new instruments by creating a new "bridge" class in the `hardware_api` directory.
@@ -23,7 +26,7 @@ Lab-Protocol/
 ├── .gitignore
 ├── TemperatureController.py  # The main control logic (PID, scheduling).
 ├── TemperatureVisualizer.py  # The PyQt5 GUI application.
-├── config.csv              # Configuration file for setpoints and stable times.
+├── config.csv              # (Untracked) Configuration file for setpoints and stable times.
 ├── environment.yaml        # Conda environment dependencies.
 ├── GEMINI.md               # Project log and protocol for AI collaboration.
 ├── README.md               # This file.
@@ -58,7 +61,13 @@ Lab-Protocol/
     python TemperatureVisualizer.py
     ```
 
-4.  **Run Tests (Optional)**: To run the unit tests, use the following command from the project root:
+4.  **Operating the GUI**:
+    - **Mode Selection**: Use the "Switch to Auto" button to toggle between manual and automatic modes.
+    - **Manual Control**: In manual mode, once the system is stable, the "Request Next Setpoint" button will become active. Click it to proceed.
+    - **Pausing**: The "Pause" button will halt the simulation/control loop.
+    - **Reset**: The "Reset Simulation" button restarts the process with the current schedule from `config.csv`.
+
+5.  **Run Tests (Optional)**: To run the unit tests, use the following command from the project root:
     ```bash
     python -m unittest discover tests
     ```
