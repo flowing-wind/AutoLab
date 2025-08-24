@@ -13,11 +13,59 @@ To build a robust, modular, and easily extensible temperature control and monito
 - **Functionality:** 
     - Asynchronous GUI with real-time plotting.
     - Supports both simulated and real hardware via a strategy pattern.
-    - **New:** Automatic and manual control modes for advancing through temperature setpoints.
-    - **New:** Enhanced UI with clearer status indicators and dynamic plot scaling.
+    - Automatic and manual control modes for advancing through temperature setpoints.
+    - Enhanced UI with clearer status indicators and dynamic plot scaling.
+    - **New:** Added a real-time stability timer.
+    - **New:** Improved plot visualization with a fixed-origin time axis.
+    - **New:** Refined UI by removing redundant controls and indicators.
 - **Next Steps:** The `VisaBridge` in `hardware_api/visa.py` is a skeleton and needs to be implemented with real hardware commands.
 
 ## Changelog
+
+### 2025-08-24: Data Management & Plotting Overhaul
+
+**Objective:** To enhance long-term data handling, improve plot visualization for large datasets, and provide data export functionality.
+
+**Changes:**
+1.  **Comprehensive Plot View:** The plot's X-axis logic has been redesigned. It now always starts at 0 and dynamically expands to show the entire history of the run, ensuring no data is ever hidden off-screen. A small padding is maintained on the right edge for better readability.
+2.  **High-Performance Plotting:** Enabled `pyqtgraph`'s built-in downsampling feature. This significantly improves performance and keeps the GUI responsive, even when plotting thousands of data points over long durations.
+3.  **Full Data Retention:** The internal data storage was switched from a fixed-size `deque` to a standard `list`, allowing the application to retain the complete history of temperature readings for the entire session.
+4.  **Data Export Feature:**
+    - Added a new "Data Management" panel to the UI.
+    - Implemented an "Export Data" button that opens a file-save dialog.
+    - Users can now save all recorded data to a CSV file, with a timestamp-based default filename (e.g., `2025-08-24_15-30-00.csv`).
+    - The exported file contains two columns: a human-readable `Timestamp` and `Temperature (K)`.
+
+**Outcome:** The application is now a more powerful tool for long-running experiments, offering robust data visualization, improved performance, and the critical ability to export complete datasets for external analysis.
+
+### 2025-08-24: UI Interaction & Plotting Enhancements
+
+**Objective:** To improve the user experience by refining default behaviors and adding more granular control over the plot visualization.
+
+**Changes:**
+1.  **Default to Auto Mode:** The application now starts and resets directly into "Auto Mode," streamlining the most common use case.
+2.  **Advanced Plot Control:**
+    - **"Reset View" Button:** A new button has been added that resets the plot's zoom and pan to the default auto-scaling view.
+    - **Smart Auto-Scaling:** The plot's automatic scaling is now disabled whenever the user manually zooms or pans, allowing for detailed inspection of the data. Auto-scaling is re-enabled by clicking the "Reset View" button.
+3.  **Non-Negative Time Axis:** The plot's X-axis (time) has been constrained to prevent it from ever showing negative values, improving clarity.
+
+**Outcome:** The application is now more intuitive to operate, with sensible defaults and more powerful, user-friendly plot interaction.
+
+### 2025-08-24: Feature Enhancement & UI Refinement
+
+**Objective:** To improve usability and add new features based on user feedback.
+
+**Changes:**
+1.  **Plot Simplification:** Removed the red "Target Setpoint" line from the real-time plot to reduce visual clutter. The current setpoint is already clearly displayed in the status bar.
+2.  **Stability Threshold:** The temperature stability check is now more lenient, with the required threshold changed from ±0.5K to ±1.0K.
+3.  **Stability Timer:** Added a new "Time Stable" label to the UI, which displays a real-time, asynchronously updated timer showing how long the system has been within the stable temperature range.
+4.  **Plot X-Axis Control:** The time axis on the plot has been improved. It now always starts at 0, maintains a minimum visible window of 100 seconds, and compresses its scale to show all data after the 100-second mark is passed.
+5.  **UI Simplification:**
+    - Removed the "Clear Data" button to avoid confusion with the "Reset Simulation" button.
+    - Removed the redundant "Stability: Yes/No" label from the top status bar, as this information is already present in the "Stability Control" panel.
+6.  **Reset Fix:** The "Reset Simulation" button now correctly clears all data from the plot and resets the view to its initial state, providing a clean restart.
+
+**Outcome:** The application is now more intuitive, provides better visual feedback on stability, and has a more polished and predictable user interface.
 
 ### 2025-08-24: GUI Enhancement & Auto Mode
 

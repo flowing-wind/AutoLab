@@ -91,6 +91,7 @@ class TemperatureController:
         self.target_setpoint = self.setpoint_schedule[self.schedule_index]
         self.current_stable_time = self.setpoint_stable_times[self.schedule_index]
         self.stabilization_start_time = None
+        self.stable_duration = 0
         
         # --- Flags ---
         self.is_stable = False
@@ -108,6 +109,10 @@ class TemperatureController:
     def get_stable_status(self):
         return self.is_stable
     
+    def get_stable_duration(self):
+        """Returns the duration in seconds for which the system has been stable."""
+        return self.stable_duration
+
     def get_schedule_index(self):
         return self.schedule_index
 
@@ -132,7 +137,7 @@ class TemperatureController:
         self.update_requested = True
         logger.info("Update requested. Will switch to next setpoint when stable.")
 
-    def _update_target_setpoint(self, current_time, stability_threshold=0.5):
+    def _update_target_setpoint(self, current_time, stability_threshold=1.0):
         # This method's logic remains largely the same, as it's about schedule management
         is_last_setpoint = self.schedule_index >= len(self.setpoint_schedule) - 1
 
@@ -141,7 +146,9 @@ class TemperatureController:
                 self.stabilization_start_time = current_time
                 logger.info(f"Temperature has entered stability range around {self.target_setpoint}K. Starting timer.")
             
-            elif (current_time - self.stabilization_start_time) >= self.current_stable_time:
+            self.stable_duration = current_time - self.stabilization_start_time
+
+            if self.stable_duration >= self.current_stable_time:
                 if not self.is_stable:
                     self.is_stable = True
                     logger.info(f"System is now stable at {self.target_setpoint}K.")
@@ -169,12 +176,13 @@ class TemperatureController:
                 logger.info(f"Temperature left stability range. Resetting timer. Current temp: {self.temperature:.4f}K")
             self.stabilization_start_time = None
             self.is_stable = False
+            self.stable_duration = 0
     
     def _on_stabilized(self):
         logger.info("Executing post-stabilization measurement/action.")
         pass
 
-    def _is_temperature_stable(self, target_temp, threshold=0.5):
+    def _is_temperature_stable(self, target_temp, threshold=1.0):
         return abs(self.temperature - target_temp) <= threshold
 
     def update(self):
