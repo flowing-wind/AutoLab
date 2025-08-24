@@ -7,9 +7,9 @@
 import numpy as np
 
 # --- Simulation Constants ---
-DEFAULT_KP = -130.0
-DEFAULT_KI = -1.5
-DEFAULT_KD = -600.0
+DEFAULT_KP = -236.1637
+DEFAULT_KI = -0.00000002
+DEFAULT_KD = -0.000000545
 
 class CryoSystem:
     """
