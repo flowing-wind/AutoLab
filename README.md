@@ -1,84 +1,98 @@
-# Lab-Protocol: Temperature Control System
+# Lab Instrument Control Panel
 
-## Introduction
+## 1. Introduction
 
-This project is a temperature control and monitoring application designed for laboratory environments. It provides a graphical user interface to visualize and manage a system's temperature in real-time. 
+This project provides a modular, web-based control panel for laboratory instruments. It is designed for high cohesion and low coupling, allowing new instruments to be added easily. The front end is built with Python Dash and Plotly for a modern user experience. The application can be run in either a **Real Mode**, interfacing with physical hardware via VISA, or a **Simulated Mode**, which runs a virtual instrument for testing and development.
 
-The application is built on a clean, decoupled architecture, featuring a hardware abstraction layer. This allows the core control logic to remain independent from the specific hardware (or simulation) it is controlling. The application's asynchronous design ensures the user interface remains responsive at all times.
+## 2. Features
 
-## Features
+-   **Modular Architecture**: Each instrument is a self-contained package.
+-   **Dual-Mode Operation**: Switch between a real VISA instrument and a fully simulated instrument directly from the UI.
+-   **Web-Based UI**: A responsive user interface built with Dash and Dash Bootstrap Components.
+-   **Dynamic Configuration**: The active instrument is loaded at runtime based on the selected mode and the `config.csv` file.
+-   **External API**: A REST API is exposed to allow other applications to access live data from the currently active instrument.
+-   **Unified Interface**: All instruments adhere to a common base class, ensuring consistent behavior.
 
-- **High-Performance Real-Time Visualization**: Plots live temperature data on a high-performance graph that remains smooth even with thousands of data points. The plot view automatically scales to show the full temperature range of the current schedule.
-- **Modern User Interface (NEW)**: Features a clean, modern design inspired by Google's Material Design, with a blue color palette and subtle animations for an enhanced user experience.
-- **Complete History View**: The plot's time axis dynamically expands to show the entire run from T=0, ensuring no data is ever scrolled off-screen.
-- **Advanced Plot Control**: The plot's auto-scaling is disabled on manual zoom/pan. A "Reset View" button restores the default auto-scaling behavior.
-- **Data Export (UPDATED)**: Easily export all collected data to a timestamped CSV file for external analysis, with temperature values formatted to four decimal places.
-- **Setpoint Scheduling**: Load a sequence of target temperatures and required stabilization times from an external `config.csv` file.
-- **Stability Control (UPDATED)**: The UI displays "Stable" as soon as the temperature difference is within ±1.0K of the setpoint, and a real-time timer shows how long this condition has been met. The core system stability for setpoint advancement is determined by the `stable_times` defined in `config.csv`.
-- **Automatic & Manual Control**:
-    - **Manual Mode**: Manually advance to the next temperature setpoint with the click of a button after the system is stable.
-    - **Auto Mode**: The application defaults to this mode. It automatically proceeds through the entire temperature schedule, advancing to the next setpoint as soon as stability is achieved.
-    - **Reset Behavior (UPDATED)**: The "Reset Simulation" button now automatically sets the system back to "Auto Mode" after restarting the simulation.
-- **Hardware Abstraction Layer (HAL)**: A plug-and-play architecture that separates the main control logic from the hardware interface. Switch between simulation and real hardware by changing a single flag.
-- **Asynchronous Operations**: The control loop runs in a separate thread to keep the GUI from freezing.
-- **Extensible by Design**: Easily add support for new instruments by creating a new "bridge" class in the `hardware_api` directory.
-- **Ready-to-use Simulation**: Comes with a built-in simulation bridge for full application testing without any hardware.
-- **Unit Testing**: Includes a `tests` module for verifying core functionality.
-
-## Directory Structure
+## 3. Directory Structure
 
 ```
-Lab-Protocol/
-├── .gitignore
-├── TemperatureController.py  # The main control logic (PID, scheduling).
-├── TemperatureVisualizer.py  # The PyQt5 GUI application.
-├── config.csv              # (Untracked) Configuration file for setpoints and stable times.
-├── environment.yaml        # Conda environment dependencies.
-├── README.md               # This file.
-├── hardware_api/           # The Hardware Abstraction Layer.
-│   ├── __init__.py
-│   ├── base.py             # Defines the abstract interface for all bridges.
-│   ├── CryoSystem.py       # The physical model for the simulation.
-│   ├── simulated.py        # The bridge for the simulated hardware.
-│   └── visa.py             # A skeleton bridge for real VISA-based hardware.
-├── log/                    # Directory for runtime log files (auto-generated).
-└── tests/
-    └── test_controller.py  # Unit tests for the controller.
+E:\Projects\Lab-Protocol\
+├── src/
+│   └── instruments/
+│       ├── base.py                     # Abstract base class for all instruments
+│       ├── temperature_controller/     # REAL instrument package for VISA hardware
+│       │   ├── interface.py
+│       │   └── layout.py
+│       └── pid_cooler_simulator/       # SIMULATED instrument package for development/testing
+│           ├── interface.py
+│           └── layout.py
+├── tests/
+│   └── test_temperature_controller.py
+├── log/
+├── Resource/
+├── app.py                  # Main Dash application entry point
+├── config.csv              # Instrument configuration file
+├── environment.yaml        # Conda environment dependencies
+└── README.md               # This file
 ```
 
-## Usage / Installation
+## 4. Usage / Installation
 
-1.  **Set up the Environment**: Make sure you have Conda installed. Create and activate the environment using the provided file:
-    ```bash
-    # Create the environment from the file
-    conda env create -f environment.yaml
+### 4.1. Environment Setup
 
-    # Activate the new environment
-    conda activate Lab-Protocol
-    ```
-2.  **Install GUI Dependencies (NEW)**: The graphical interface now uses `qt-material` for enhanced aesthetics. Install it within your active Conda environment:
-    ```bash
-    pip install qt-material
-    ```
-3.  **Configure the Schedule (Optional)**: Open `config.csv` to edit the temperature setpoints and the required time (in seconds) to hold at each temperature.
-    - `setpoints`: A comma-separated list of target temperatures in Kelvin.
-    - `stable_times`: A comma-separated list of times in seconds.
+This project uses Conda for environment management. To create and activate the environment, run:
 
-4.  **Run the Application**: Execute the visualizer script from the project root directory.
-    ```bash
-    python TemperatureVisualizer.py
-    ```
+```bash
+# 1. Create the environment from the YAML file
+conda env create -f environment.yaml
 
-5.  **Operating the GUI**:
-    - **Default Mode**: The application starts in "Auto Mode" by default.
-    - **Mode Selection**: Use the "Switch to Manual" button to toggle to manual mode.
-    - **Manual Control**: In manual mode, once the system is stable, the "Request Next Setpoint" button will become active. Click it to proceed.
-    - **Plot Control**: Manually zoom or pan the plot to inspect data. Click the "Reset View" button to return to the default auto-scaling view.
-    - **Exporting Data**: Click the "Export Data" button at any time to save the complete history of the current run to a CSV file.
-    - **Pausing**: The "Pause" button will halt the simulation/control loop.
-    - **Reset**: The "Reset Simulation" button restarts the process (in Auto Mode) with the current schedule from `config.csv`.
+# 2. Activate the environment
+conda activate lab-protocol
+```
 
-6.  **Run Tests (Optional)**: To run the unit tests, use the following command from the project root:
-    ```bash
-    python -m unittest discover tests
-    ```
+### 4.2. Instrument Configuration
+
+Instruments are defined in `config.csv`. The application loads the configuration based on the `type` column, which corresponds to the instrument's package name in `src/instruments/`.
+
+**Example `config.csv`:**
+```csv
+instrument_id,type,visa_address,config
+TC290,temperature_controller,TCPIP0::192.168.1.1::inst0::INSTR,"{\"setpoints\": [300, 310, 320]}"
+SIM_COOLER,pid_cooler_simulator,SIMULATED,"{\"setpoints\": [280, 260, 240, 220, 200]}"
+```
+
+### 4.3. Running the Application
+
+Once the environment is activated, start the web server:
+
+```bash
+python app.py
+```
+
+The application will be available at `http://127.0.0.1:8050`. By default, it starts in **Simulated Mode**. Use the radio buttons in the navigation bar to switch between **Simulated** and **Real** modes.
+
+## 5. Connecting to Real Hardware
+
+The `temperature_controller` module is designed to connect to a real instrument via VISA. To make it work with your specific hardware, you need to edit the following methods in `src/instruments/temperature_controller/interface.py`:
+
+-   `get_temperature_from_device(self) -> float`:
+    -   Replace the placeholder code with the SCPI command that queries your device for its temperature.
+-   `set_setpoint_on_device(self, temp: float)`:
+    -   Replace the placeholder code with the SCPI command that sets a new temperature setpoint on your device.
+
+These methods are clearly marked with `!! This is a placeholder !!` in the source code.
+
+## 6. Testing
+
+Unit tests are located in the `tests/` directory. To run a specific test file, execute the following command from the project root:
+
+```bash
+python -m unittest tests/test_temperature_controller.py
+```
+
+## 7. Changelog
+
+-   **2025-08-27**:
+    -   Refactored `app.py` to preload all instruments on startup instead of on-demand.
+    -   This resolves a bug that caused a Dash callback error (`Output is already in use`) when switching between Simulated and Real modes multiple times.
+    -   The application now manages instrument connections and UI visibility dynamically, improving stability and performance.
