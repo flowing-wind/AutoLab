@@ -6,21 +6,24 @@
 
 import sys
 import time
-from collections import deque
+import csv
+import datetime
 from PyQt5.QtWidgets import (
                              QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, 
-                             QWidget, QLabel, QPushButton, QGroupBox, QTextEdit)
+                             QWidget, QLabel, QPushButton, QGroupBox, QTextEdit, QFileDialog)
 from PyQt5.QtCore import QObject, QThread, pyqtSignal, Qt
 import pyqtgraph as pg
-import datetime
 import TemperatureController
+
+# Add qt_material import
+import qt_material
 
 # ==================== Worker Thread ====================
 class Worker(QObject):
     """
     Runs the temperature controller in a background thread to keep the GUI responsive.
     """
-    data_updated = pyqtSignal(float, float, bool, int)
+    data_updated = pyqtSignal(float, float, bool, int, float)
     log_generated = pyqtSignal(str)
 
     def __init__(self, controller):
@@ -38,13 +41,14 @@ class Worker(QObject):
                 setpoint = self.controller.get_setpoint()
                 is_stable = self.controller.get_stable_status()
                 schedule_index = self.controller.get_schedule_index()
-                self.data_updated.emit(temp, setpoint, is_stable, schedule_index)
+                stable_duration = self.controller.get_stable_duration()
+                self.data_updated.emit(temp, setpoint, is_stable, schedule_index, stable_duration)
             time.sleep(1) # Update interval
 
     def set_paused(self, paused):
         """Pauses or resumes the simulation loop."""
         self._is_paused = paused
-        self.log_generated.emit(f"Simulation {'paused' if paused else 'resumed'}.")
+        self.log_generated.emit(f"Simulation {('paused' if paused else 'resumed')}.")
 
     def stop(self):
         """Stops the worker loop."""
@@ -58,11 +62,12 @@ class TemperatureMonitor(QMainWindow):
         self.setWindowTitle("Real-Time Temperature Monitor - Asynchronous")
         self.setGeometry(100, 100, 1200, 800)
         
-        self.MAX_DATA_POINTS = 200
-        self.times = deque(maxlen=self.MAX_DATA_POINTS)
-        self.temperatures = deque(maxlen=self.MAX_DATA_POINTS)
-        self.setpoints = deque(maxlen=self.MAX_DATA_POINTS)
+        # Use standard lists to store all historical data
+        self.times = []
+        self.temperatures = []
         
+        self.is_auto_range_enabled = True # Flag for plot auto-ranging
+
         self._setup_ui()
         self._setup_thread()
 
@@ -82,16 +87,19 @@ class TemperatureMonitor(QMainWindow):
         # Status Bar
         status_bar_layout = QHBoxLayout()
         self.mode_label = QLabel("Mode: Unknown")
+        self.final_target_label = QLabel("Final Target: N/A")
+        self.setpoint_label = QLabel("Current Setpoint: N/A")
         self.temp_label = QLabel("Current Temp: N/A")
-        self.target_label = QLabel("Target Temp: N/A")
-        self.stability_label = QLabel("Stability: N/A")
         
         status_bar_layout.addWidget(self.mode_label)
         status_bar_layout.addStretch()
-        status_bar_layout.addWidget(self.target_label)
+        status_bar_layout.addWidget(QLabel("|"))
+        status_bar_layout.addWidget(self.final_target_label)
         status_bar_layout.addStretch()
-        status_bar_layout.addWidget(self.stability_label)
+        status_bar_layout.addWidget(QLabel("|"))
+        status_bar_layout.addWidget(self.setpoint_label)
         status_bar_layout.addStretch()
+        status_bar_layout.addWidget(QLabel("|"))
         status_bar_layout.addWidget(self.temp_label)
         left_layout.addLayout(status_bar_layout)
         
@@ -102,22 +110,30 @@ class TemperatureMonitor(QMainWindow):
         self.plot_widget.setLabel('bottom', 'Time', 's')
         self.plot_widget.addLegend()
         self.plot_widget.showGrid(x=True, y=True)
+        self.plot_widget.getViewBox().setLimits(xMin=0) # Prevent negative time axis
+        self.plot_widget.sigRangeChanged.connect(self.on_plot_range_changed)
         self.temp_curve = self.plot_widget.plot([], [], pen=pg.mkPen('b', width=2), name="Live Temperature")
-        self.setpoint_curve = self.plot_widget.plot([], [], pen=pg.mkPen('r', width=2, style=Qt.DashLine), name="Target Temperature")
+        # Enable auto-downsampling for performance with large datasets
+        self.temp_curve.setDownsampling(auto=True, ds='auto')
+        
         left_layout.addWidget(self.plot_widget)
         
         # Control Buttons
         controls_layout = QHBoxLayout()
+        self.auto_mode_checkbox = QPushButton("Auto Mode")
+        self.auto_mode_checkbox.setCheckable(True)
+        self.auto_mode_checkbox.clicked.connect(self.on_auto_mode_toggled)
         self.pause_button = QPushButton("Pause")
         self.pause_button.setCheckable(True)
         self.pause_button.clicked.connect(self.on_pause_toggled)
-        self.clear_button = QPushButton("Clear Data")
-        self.clear_button.clicked.connect(self.on_clear_data_clicked)
         self.reset_button = QPushButton("Reset Simulation")
         self.reset_button.clicked.connect(self.on_reset_simulation_clicked)
+        self.reset_view_button = QPushButton("Reset View")
+        self.reset_view_button.clicked.connect(self.on_reset_view_clicked)
+        controls_layout.addWidget(self.auto_mode_checkbox)
         controls_layout.addWidget(self.pause_button)
-        controls_layout.addWidget(self.clear_button)
         controls_layout.addWidget(self.reset_button)
+        controls_layout.addWidget(self.reset_view_button)
         controls_layout.addStretch()
         left_layout.addLayout(controls_layout)
         
@@ -133,8 +149,10 @@ class TemperatureMonitor(QMainWindow):
         self.update_button.setEnabled(False)
         self.stability_status_label = QLabel("Status: Not Stable")
         self.stable_time_label = QLabel("Required Stable Time: N/A")
+        self.stability_timer_label = QLabel("Time Stable: 0.0s")
         stability_layout.addWidget(self.stability_status_label)
         stability_layout.addWidget(self.stable_time_label)
+        stability_layout.addWidget(self.stability_timer_label)
         stability_layout.addWidget(self.update_button)
         right_layout.addWidget(stability_group)
         
@@ -147,6 +165,14 @@ class TemperatureMonitor(QMainWindow):
         info_layout.addWidget(self.schedule_index_label)
         right_layout.addWidget(info_group)
         
+        # Data Management Group
+        data_group = QGroupBox("Data Management")
+        data_layout = QVBoxLayout(data_group)
+        self.export_button = QPushButton("Export Data")
+        self.export_button.clicked.connect(self.on_export_data_clicked)
+        data_layout.addWidget(self.export_button)
+        right_layout.addWidget(data_group)
+
         # Log Group
         log_group = QGroupBox("System Log")
         log_layout = QVBoxLayout(log_group)
@@ -175,12 +201,13 @@ class TemperatureMonitor(QMainWindow):
         # Initialize UI with the first data point
         self.times.append(time.time())
         self.temperatures.append(self.controller.get_temperature())
-        self.setpoints.append(self.controller.get_setpoint())
         self._update_plot()
         self._update_system_info_panel(self.controller.get_schedule_index())
         self.mode_label.setText(f"Mode: {'Simulation' if self.controller.is_debug_mode else 'Live Instrument'}")
+        self.final_target_label.setText(f"Final Target: {self.controller.get_final_target():.2f} K")
 
         self.thread.start()
+        self.auto_mode_checkbox.click() # Start in auto mode by default
 
     @pg.QtCore.pyqtSlot(str)
     def log_message(self, message):
@@ -189,28 +216,33 @@ class TemperatureMonitor(QMainWindow):
         self.log_text_edit.append(f"[{timestamp}] {message}")
 
     def on_request_update_clicked(self):
-        """Handles the 'Request Next Setpoint' button click."""
-        self.controller.request_update()
-        self.update_button.setEnabled(False)
-        self.stability_status_label.setText("Status: Update Requested")
-        self.log_message("User requested next setpoint.")
+        """Handles the 'Request Next Setpoint' button click in manual mode."""
+        if not self.controller.is_auto_mode():
+            self.controller.request_update()
+            self.update_button.setEnabled(False)
+            self.stability_status_label.setText("Status: Update Requested")
+            self.log_message("User requested next setpoint.")
+
+    def on_auto_mode_toggled(self):
+        """Handles the auto/manual mode button click."""
+        is_auto = self.auto_mode_checkbox.isChecked()
+        self.controller.set_auto_mode(is_auto)
+        self.log_message(f"Switched to {'Auto' if is_auto else 'Manual'} mode.")
+        
+        if is_auto:
+            self.auto_mode_checkbox.setText("Switch to Manual")
+            self.update_button.setText("Auto-advancing...")
+            self.update_button.setEnabled(False)
+        else:
+            self.auto_mode_checkbox.setText("Switch to Auto")
+            self.update_button.setText("Request Next Setpoint")
+            self.update_button.setEnabled(self.controller.get_stable_status())
 
     def on_pause_toggled(self):
         """Handles the pause/resume button click."""
         is_paused = self.pause_button.isChecked()
         self.worker.set_paused(is_paused)
         self.pause_button.setText("Resume" if is_paused else "Pause")
-
-    def on_clear_data_clicked(self):
-        """Clears the plot data."""
-        self.times.clear()
-        self.temperatures.clear()
-        self.setpoints.clear()
-        self.times.append(time.time())
-        self.temperatures.append(self.controller.get_temperature())
-        self.setpoints.append(self.controller.get_setpoint())
-        self._update_plot()
-        self.log_message("Plot data cleared.")
 
     def on_reset_simulation_clicked(self):
         """Resets the simulation by creating a new controller and worker."""
@@ -219,11 +251,49 @@ class TemperatureMonitor(QMainWindow):
         self.thread.quit()
         self.thread.wait()
         
-        self._setup_thread()
-        self.on_clear_data_clicked()
+        self.times.clear()
+        self.temperatures.clear()
+
+        self._setup_thread() 
+        
+        self.on_reset_view_clicked() # Reset plot view to auto-range
         self.update_button.setEnabled(False)
         self.stability_status_label.setText("Status: Not Stable")
+        self.stability_timer_label.setText("Time Stable: 0.0s")
         self.log_message("Simulation reset.")
+
+    def on_plot_range_changed(self):
+        """Disables auto-ranging when the user manually pans or zooms."""
+        self.is_auto_range_enabled = False
+
+    def on_reset_view_clicked(self):
+        """Resets the plot view to auto-ranging."""
+        self.is_auto_range_enabled = True
+        self._update_plot()
+
+    def on_export_data_clicked(self):
+        """Opens a file dialog to save all collected temperature data to a CSV file."""
+        if not self.times:
+            self.log_message("No data to export.")
+            return
+
+        default_filename = f"{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.csv"
+        options = QFileDialog.Options()
+        options |= QFileDialog.DontUseNativeDialog
+        filePath, _ = QFileDialog.getSaveFileName(self, "Save Data", default_filename, "CSV Files (*.csv);;All Files (*)", options=options)
+
+        if filePath:
+            try:
+                with open(filePath, 'w', newline='') as csvfile:
+                    writer = csv.writer(csvfile)
+                    writer.writerow(['Timestamp', 'Temperature (K)'])
+                    for i in range(len(self.times)):
+                        # Convert unix timestamp to human-readable format
+                        readable_time = datetime.datetime.fromtimestamp(self.times[i]).strftime('%Y-%m-%d %H:%M:%S')
+                        writer.writerow([readable_time, self.temperatures[i]])
+                self.log_message(f"Data successfully exported to {filePath}")
+            except Exception as e:
+                self.log_message(f"Error exporting data: {e}")
 
     def _update_system_info_panel(self, schedule_index):
         """Updates the labels in the system information panel."""
@@ -231,35 +301,79 @@ class TemperatureMonitor(QMainWindow):
         self.schedule_index_label.setText(f"Current Index: {schedule_index}/{len(self.controller.setpoint_schedule)-1}")
         self.stable_time_label.setText(f"Required Stable Time: {self.controller.current_stable_time}s")
 
-    @pg.QtCore.pyqtSlot(float, float, bool, int)
-    def on_data_updated(self, temp, setpoint, is_stable, schedule_index):
+    @pg.QtCore.pyqtSlot(float, float, bool, int, float)
+    def on_data_updated(self, temp, setpoint, is_stable, schedule_index, stable_duration):
         """Slot to receive data from the worker thread and update the GUI."""
         self.times.append(time.time())
         self.temperatures.append(temp)
-        self.setpoints.append(setpoint)
 
-        self.stability_label.setText(f"Stable: {is_stable}")
-        if is_stable:
-            self.stability_label.setStyleSheet("color: green;")
-            self.stability_status_label.setText("Status: Stable, waiting for user.")
-            self.update_button.setEnabled(True)
+        self.stability_timer_label.setText(f"Time Stable: {stable_duration:.1f}s")
+
+        # Determine GUI display status: "Stable" if timer is running and temp is within range
+        is_display_stable_now = (stable_duration > 0) and (abs(temp - setpoint) <= 1.0)
+
+        if is_display_stable_now:
+            self.stability_status_label.setText("Status: Stable")
+            self.stability_status_label.setStyleSheet("color: green;")
         else:
-            self.stability_label.setStyleSheet("color: orange;")
             self.stability_status_label.setText("Status: Not Stable")
+            self.stability_status_label.setStyleSheet("color: orange;")
+
+        # Handle the update button and potential override of status label based on controller's `is_stable`
+        if is_stable: # This `is_stable` comes from the controller, based on `self.current_stable_time`
+            if self.controller.is_auto_mode():
+                self.update_button.setEnabled(False)
+                self.stability_status_label.setText("Status: Stable, auto-advancing...") # Override for auto-advance
+            else:
+                self.update_button.setEnabled(True)
+                self.stability_status_label.setText("Status: Stable, waiting for user.") # Override for user request
+        else:
             self.update_button.setEnabled(False)
+            # If not stable by controller's definition, and not auto-advancing, the display_stable_now status holds.
 
         self.temp_label.setText(f"Current Temp: {temp:.4f} K")
-        self.target_label.setText(f"Target Temp: {setpoint:.4f} K")
-        
+        self.setpoint_label.setText(f"Current Setpoint: {setpoint:.4f} K")
+
         self._update_system_info_panel(schedule_index)
         self._update_plot()
 
     def _update_plot(self):
-        """Updates the plot with new data."""
-        if len(self.times) > 1:
-            relative_times = [t - self.times[0] for t in self.times]
-            self.temp_curve.setData(relative_times, list(self.temperatures))
-            self.setpoint_curve.setData(relative_times, list(self.setpoints))
+        """Updates the plot with new data, ensuring all data is visible."""
+        if not self.times:
+            self.temp_curve.setData([], [])
+            if self.is_auto_range_enabled:
+                self.plot_widget.setXRange(0, 100)
+            return
+
+        start_time = self.times[0]
+        relative_times = [t - start_time for t in self.times]
+        self.temp_curve.setData(relative_times, self.temperatures)
+
+        if self.is_auto_range_enabled:
+            # Temporarily disconnect the signal to prevent a feedback loop
+            try:
+                self.plot_widget.sigRangeChanged.disconnect(self.on_plot_range_changed)
+            except (TypeError, RuntimeError):
+                # This can happen if the signal was already disconnected
+                pass
+
+            try:
+                # Set Y-axis range based on the full temperature schedule
+                start_temp = self.controller.get_initial_temperature()
+                final_temp = self.controller.get_final_target()
+                min_val = min(start_temp, final_temp)
+                max_val = max(start_temp, final_temp)
+                padding = (max_val - min_val) * 0.1
+                self.plot_widget.setYRange(min_val - padding, max_val + padding if padding > 0 else max_val + 1)
+
+                # Set X-axis to show all data from 0 to the latest time, with a small right-side padding
+                current_max_time = relative_times[-1] if relative_times else 0
+                # Ensure a minimum visible range, then add padding
+                visible_range = max(100, current_max_time * 1.05) 
+                self.plot_widget.setXRange(0, visible_range, padding=0)
+            finally:
+                # Always reconnect the signal
+                self.plot_widget.sigRangeChanged.connect(self.on_plot_range_changed)
 
     def closeEvent(self, event):
         """Ensures the background thread is stopped when the window is closed."""
@@ -275,3 +389,4 @@ if __name__ == '__main__':
     window = TemperatureMonitor()
     window.show()
     sys.exit(app.exec_())
+

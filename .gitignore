@@ -21,3 +21,6 @@ Resource/
 build/
 dist/
 *.egg-info/
+
+# Configuration files
+config.csv
