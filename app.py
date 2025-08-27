@@ -121,7 +121,7 @@ def create_app_layout():
         [
             dcc.Interval(
                 id='main-update-interval',
-                interval=2*1000,
+                interval=500,
                 n_intervals=0
             ),
             dbc.NavbarSimple(

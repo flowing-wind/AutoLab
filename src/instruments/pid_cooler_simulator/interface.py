@@ -79,7 +79,7 @@ class InstrumentInterface(Instrument):
         self.schedule = config.get("schedule", [])
         if not self.schedule:
             logger.warning(f"[{self.instrument_id}] No schedule found in config. Using default.")
-            self.schedule = [{"setpoint": 273, "dwell_time": 10}] # Default schedule for simulator
+            self.schedule = [{"setpoint": 273, "dwell_time": 5}] # Default schedule for simulator
 
         self.setpoint_schedule = [item["setpoint"] for item in self.schedule]
         
@@ -211,7 +211,7 @@ class InstrumentInterface(Instrument):
         # Log data to file
         self._log_data(datetime_obj, current_temp, self.target_setpoint)
 
-        stability_threshold = 0.5
+        stability_threshold = 1.0
         # Check for stability
         if abs(current_temp - self.target_setpoint) <= stability_threshold:
             if self.stabilization_start_time is None:

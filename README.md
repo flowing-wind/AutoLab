@@ -110,6 +110,8 @@ python -m unittest tests/test_temperature_controller.py
 ## 7. Changelog
 
 -   **2025-08-28**:
+    -   **Stability Criteria**: Updated the temperature stability condition to be within ±1K of the setpoint for a continuous 5 seconds.
+    -   **UI Refresh Rate**: Increased the UI update frequency for graphs and live data to 500ms for a more responsive user experience.
     -   **Configuration Refactor**: Split `config.csv` into `instruments.csv` (for connection details) and `config.csv` (for instrument-specific parameters).
     -   **Per-Setpoint Dwell Time**: Implemented the ability to define a unique `dwell_time` for each setpoint within the instrument's schedule.
     -   **Auto Mode Default**: "Auto Mode" is now enabled by default on application startup.
