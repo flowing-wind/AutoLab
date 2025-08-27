@@ -41,12 +41,19 @@ instruments = {}
 
 def load_all_instruments():
     """
-    Loads all instruments defined in config.csv, registers their callbacks,
-    and stores them in the `instruments` dictionary.
+    Loads all instruments defined in instruments.csv and config.csv,
+    registers their callbacks, and stores them in the `instruments` dictionary.
     """
     try:
-        config_df = pd.read_csv("config.csv", quotechar="'")
-        for _, instrument_row in config_df.iterrows():
+        # Load instrument connection details
+        instruments_df = pd.read_csv("instruments.csv", quotechar="'")
+        # Load instrument specific configurations
+        configs_df = pd.read_csv("config.csv", quotechar="'")
+
+        # Merge the two dataframes on instrument_id
+        merged_df = pd.merge(instruments_df, configs_df, on='instrument_id', how='left')
+
+        for _, instrument_row in merged_df.iterrows():
             instrument_id = instrument_row['instrument_id']
             instrument_type = instrument_row['type']
             
@@ -65,6 +72,7 @@ def load_all_instruments():
             except (json.JSONDecodeError, KeyError):
                 specific_config = {}
 
+            # Combine visa_address with specific config
             config = {"visa_address": visa_address, **specific_config}
 
             logger.info(f"Loading instrument for {mode} mode: {instrument_id}")
@@ -78,7 +86,7 @@ def load_all_instruments():
             instruments[mode] = instance
             
     except (FileNotFoundError, IndexError) as e:
-        logger.error(f"Could not read or parse config.csv: {e}")
+        logger.error(f"Could not read or parse configuration files: {e}")
     except Exception as e:
         logger.error(f"Error loading instruments: {e}", exc_info=True)
 

@@ -9,7 +9,11 @@ This project provides a modular, web-based control panel for laboratory instrume
 -   **Modular Architecture**: Each instrument is a self-contained package.
 -   **Dual-Mode Operation**: Switch between a real VISA instrument and a fully simulated instrument directly from the UI.
 -   **Web-Based UI**: A responsive user interface built with Dash and Dash Bootstrap Components.
--   **Dynamic Configuration**: The active instrument is loaded at runtime based on the selected mode and the `config.csv` file.
+-   **Dynamic Configuration**: The active instrument is loaded at runtime based on the selected mode and the `instruments.csv` and `config.csv` files.
+-   **Per-Setpoint Dwell Time**: Configure individual stability dwell times for each setpoint in the temperature schedule.
+-   **Automated Control**: "Auto Mode" is enabled by default, allowing the system to automatically advance through setpoints once stability is achieved.
+-   **Persistent Data Logging**: All instrument data is logged to CSV files with second-level timestamp precision, and logs are automatically trimmed to manage file size.
+-   **Data Export**: Export historical data for a specified date and time range directly from the UI.
 -   **External API**: A REST API is exposed to allow other applications to access live data from the currently active instrument.
 -   **Unified Interface**: All instruments adhere to a common base class, ensuring consistent behavior.
 
@@ -31,7 +35,8 @@ E:\Projects\Lab-Protocol\
 ├── log/
 ├── Resource/
 ├── app.py                  # Main Dash application entry point
-├── config.csv              # Instrument configuration file
+├── config.csv              # Instrument specific configuration parameters
+├── instruments.csv         # Instrument connection and type definitions
 ├── environment.yaml        # Conda environment dependencies
 └── README.md               # This file
 ```
@@ -52,14 +57,26 @@ conda activate lab-protocol
 
 ### 4.2. Instrument Configuration
 
-Instruments are defined in `config.csv`. The application loads the configuration based on the `type` column, which corresponds to the instrument's package name in `src/instruments/`.
+Instrument configurations are now split into two files for better organization:
 
-**Example `config.csv`:**
+-   `instruments.csv`: Defines the instrument instances, their types, and connection details (e.g., VISA address).
+-   `config.csv`: Contains instrument-specific operational parameters, including the temperature schedule with individual dwell times for each setpoint.
+
+**Example `instruments.csv`:**
 ```csv
-instrument_id,type,visa_address,config
-TC290,temperature_controller,TCPIP0::192.168.1.1::inst0::INSTR,"{\"setpoints\": [300, 310, 320]}"
-SIM_COOLER,pid_cooler_simulator,SIMULATED,"{\"setpoints\": [280, 260, 240, 220, 200]}"
+instrument_id,type,visa_address
+TC290,temperature_controller,ASRL3::INSTR
+pid_cooler_sim,pid_cooler_simulator,none
 ```
+
+**Example `config.csv` (with per-setpoint dwell times):**
+```csv
+instrument_id,config
+TC290,'{"schedule": [{"setpoint": 300, "dwell_time": 10}, {"setpoint": 295, "dwell_time": 15}, {"setpoint": 290, "dwell_time": 20}]}'
+pid_cooler_sim,'{"schedule": [{"setpoint": 273, "dwell_time": 10}, {"setpoint": 250, "dwell_time": 10}, {"setpoint": 220, "dwell_time": 10}, {"setpoint": 200, "dwell_time": 10}]}'
+```
+
+The `config` column in `config.csv` is a JSON string containing a `schedule` array. Each object in the `schedule` array specifies a `setpoint` (target temperature) and its corresponding `dwell_time` (time in seconds the system must remain stable at that setpoint before advancing).
 
 ### 4.3. Running the Application
 
@@ -92,6 +109,13 @@ python -m unittest tests/test_temperature_controller.py
 
 ## 7. Changelog
 
+-   **2025-08-28**:
+    -   **Configuration Refactor**: Split `config.csv` into `instruments.csv` (for connection details) and `config.csv` (for instrument-specific parameters).
+    -   **Per-Setpoint Dwell Time**: Implemented the ability to define a unique `dwell_time` for each setpoint within the instrument's schedule.
+    -   **Auto Mode Default**: "Auto Mode" is now enabled by default on application startup.
+    -   **CSV Timestamp Precision**: Optimized CSV data logging to use second-level timestamp precision.
+    -   **Enhanced Data Export UI**: Improved the data export interface with separate date and time input fields for more precise range selection.
+    -   **Codebase Cleanup**: Removed the unused `hardware_api` directory.
 -   **2025-08-27**:
     -   Refactored `app.py` to preload all instruments on startup instead of on-demand.
     -   This resolves a bug that caused a Dash callback error (`Output is already in use`) when switching between Simulated and Real modes multiple times.
