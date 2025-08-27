@@ -1,0 +1,3 @@
+instrument_id,config
+pid_cooler_sim,'{"schedule": [{"setpoint": 280, "dwell_time": 20}, {"setpoint": 270, "dwell_time": 15}, {"setpoint": 260, "dwell_time": 10}, {"setpoint": 250, "dwell_time": 20}]}'
+TC290,'{"schedule": [{"setpoint": 300, "dwell_time": 10}, {"setpoint": 295, "dwell_time": 10}, {"setpoint": 290, "dwell_time": 10}]}'

@@ -1,0 +1,9 @@
+feat: Refactor configuration and enhance data features
+
+- Split configuration into `instruments.csv` and `config.csv` for better organization.
+- Implemented per-setpoint dwell times within the instrument schedule.
+- Set "Auto Mode" to be enabled by default on startup.
+- Optimized CSV data logging to second-level timestamp precision, ensuring only one entry per second.
+- Enhanced data export UI with separate date and time input fields.
+- Removed unused `hardware_api` directory.
+- Updated `README.md` to reflect all changes.
