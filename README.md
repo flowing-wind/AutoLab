@@ -2,41 +2,35 @@
 
 ## 1. Introduction
 
-This project provides a modular, web-based control panel for laboratory instruments. It is designed for high cohesion and low coupling, allowing new instruments to be added easily. The front end is built with Python Dash and Plotly for a modern user experience. The application can be run in either a **Real Mode**, interfacing with physical hardware via VISA, or a **Simulated Mode**, which runs a virtual instrument for testing and development.
+This project provides a modular, web-based control panel for laboratory instruments. It is designed with a clear and simple architecture, allowing new instruments to be added easily by inheriting from a unified base class. The front end is built with Python Dash and displays each loaded instrument in its own tab.
 
 ## 2. Features
 
--   **Modular Architecture**: Each instrument is a self-contained package.
--   **Dual-Mode Operation**: Switch between a real VISA instrument and a fully simulated instrument directly from the UI.
--   **Web-Based UI**: A responsive user interface built with Dash and Dash Bootstrap Components.
--   **Dynamic Configuration**: The active instrument is loaded at runtime based on the selected mode and the `instruments.csv` and `config.csv` files.
--   **Per-Setpoint Dwell Time**: Configure individual stability dwell times for each setpoint in the temperature schedule.
--   **Automated Control**: "Auto Mode" is enabled by default, allowing the system to automatically advance through setpoints once stability is achieved.
--   **Persistent Data Logging**: All instrument data is logged to CSV files with second-level timestamp precision, and logs are automatically trimmed to manage file size.
+-   **Simplified Architecture**: A strong `UnifiedInstrument` base class contains all shared logic for UI, callbacks, data logging, and state management.
+-   **Tab-Based UI**: Each instrument loaded from the configuration is displayed in a separate, easy-to-access tab.
+-   **Extensible by Inheritance**: Add new instruments simply by creating a new class that inherits from `UnifiedInstrument` and implementing a few hardware-specific methods.
+-   **Dynamic Configuration**: Instruments are loaded at runtime based on `instruments.csv` and `config.csv`.
+-   **Automated Control**: "Auto Mode" automatically advances through a temperature schedule once stability at each setpoint is achieved.
+-   **Persistent Data Logging**: Instrument data is logged to CSV files with automatic log trimming to manage file size.
 -   **Data Export**: Export historical data for a specified date and time range directly from the UI.
--   **External API**: A REST API is exposed to allow other applications to access live data from the currently active instrument.
--   **Unified Interface**: All instruments adhere to a common base class, ensuring consistent behavior.
+-   **External API**: A REST API endpoint (`/api/v1/instrument/<instrument_id>/state`) provides external access to live instrument data.
 
-## 3. Directory Structure
+## 3. Directory Structure (Simplified)
 
 ```
 E:\Projects\Lab-Protocol\
 ├── src/
 │   └── instruments/
-│       ├── base.py                     # Abstract base class for all instruments
-│       ├── temperature_controller/     # REAL instrument package for VISA hardware
-│       │   ├── interface.py
-│       │   └── layout.py
-│       └── pid_cooler_simulator/       # SIMULATED instrument package for development/testing
-│           ├── interface.py
-│           └── layout.py
+│       ├── base.py                     # Core: UnifiedInstrument base class with all shared logic
+│       ├── temperature_controller/     # Example: Real instrument inheriting from base
+│       │   └── interface.py
+│       └── pid_cooler_simulator/       # Example: Simulated instrument inheriting from base
+│           └── interface.py
 ├── tests/
-│   └── test_temperature_controller.py
 ├── log/
-├── Resource/
 ├── app.py                  # Main Dash application entry point
-├── config.csv              # Instrument specific configuration parameters
-├── instruments.csv         # Instrument connection and type definitions
+├── config.csv              # Instrument-specific parameters (e.g., temperature schedule)
+├── instruments.csv         # Instrument definitions and connection details
 ├── environment.yaml        # Conda environment dependencies
 └── README.md               # This file
 ```
@@ -45,7 +39,7 @@ E:\Projects\Lab-Protocol\
 
 ### 4.1. Environment Setup
 
-This project uses Conda for environment management. To create and activate the environment, run:
+This project uses Conda for environment management.
 
 ```bash
 # 1. Create the environment from the YAML file
@@ -57,68 +51,39 @@ conda activate lab-protocol
 
 ### 4.2. Instrument Configuration
 
-Instrument configurations are now split into two files for better organization:
-
--   `instruments.csv`: Defines the instrument instances, their types, and connection details (e.g., VISA address).
--   `config.csv`: Contains instrument-specific operational parameters, including the temperature schedule with individual dwell times for each setpoint.
+-   **`instruments.csv`**: Defines the instrument instances, their types (which map to the folder name in `src/instruments`), and connection details (e.g., VISA address).
+-   **`config.csv`**: Contains instrument-specific operational parameters, like the temperature schedule.
 
 **Example `instruments.csv`:**
 ```csv
 instrument_id,type,visa_address
-TC290,temperature_controller,ASRL3::INSTR
-pid_cooler_sim,pid_cooler_simulator,none
+'TC290','temperature_controller','ASRL3::INSTR'
+'pid_sim','pid_cooler_simulator','none'
 ```
 
-**Example `config.csv` (with per-setpoint dwell times):**
+**Example `config.csv`:**
 ```csv
 instrument_id,config
-TC290,'{"schedule": [{"setpoint": 300, "dwell_time": 10}, {"setpoint": 295, "dwell_time": 15}, {"setpoint": 290, "dwell_time": 20}]}'
-pid_cooler_sim,'{"schedule": [{"setpoint": 273, "dwell_time": 10}, {"setpoint": 250, "dwell_time": 10}, {"setpoint": 220, "dwell_time": 10}, {"setpoint": 200, "dwell_time": 10}]}'
+'TC290','{"schedule": [{"setpoint": 300, "dwell_time": 10}, {"setpoint": 295, "dwell_time": 15}]}'
+'pid_sim','{"schedule": [{"setpoint": 273, "dwell_time": 5}, {"setpoint": 250, "dwell_time": 5}]}'
 ```
 
-The `config` column in `config.csv` is a JSON string containing a `schedule` array. Each object in the `schedule` array specifies a `setpoint` (target temperature) and its corresponding `dwell_time` (time in seconds the system must remain stable at that setpoint before advancing).
-
 ### 4.3. Running the Application
-
-Once the environment is activated, start the web server:
 
 ```bash
 python app.py
 ```
+The application will be available at `http://127.0.0.1:8050`.
 
-The application will be available at `http://127.0.0.1:8050`. By default, it starts in **Simulated Mode**. Use the radio buttons in the navigation bar to switch between **Simulated** and **Real** modes.
+## 5. Adding a New Instrument
 
-## 5. Connecting to Real Hardware
+1.  Create a new folder under `src/instruments/` (e.g., `my_new_instrument/`).
+2.  Inside, create an `interface.py` file.
+3.  In `interface.py`, define a class `InstrumentInterface` that inherits from `src.instruments.base.UnifiedInstrument`.
+4.  Implement the required abstract methods: `connect()`, `disconnect()`, `read_temperature()`, and `write_setpoint()`.
+5.  Add your new instrument to `instruments.csv` and `config.csv`.
+6.  Run the application. Your new instrument will automatically appear in its own tab.
 
-The `temperature_controller` module is designed to connect to a real instrument via VISA. To make it work with your specific hardware, you need to edit the following methods in `src/instruments/temperature_controller/interface.py`:
+## 6. Connecting to Real Hardware
 
--   `get_temperature_from_device(self) -> float`:
-    -   Replace the placeholder code with the SCPI command that queries your device for its temperature.
--   `set_setpoint_on_device(self, temp: float)`:
-    -   Replace the placeholder code with the SCPI command that sets a new temperature setpoint on your device.
-
-These methods are clearly marked with `!! This is a placeholder !!` in the source code.
-
-## 6. Testing
-
-Unit tests are located in the `tests/` directory. To run a specific test file, execute the following command from the project root:
-
-```bash
-python -m unittest tests/test_temperature_controller.py
-```
-
-## 7. Changelog
-
--   **2025-08-28**:
-    -   **Stability Criteria**: Updated the temperature stability condition to be within ±1K of the setpoint for a continuous 5 seconds.
-    -   **UI Refresh Rate**: Increased the UI update frequency for graphs and live data to 500ms for a more responsive user experience.
-    -   **Configuration Refactor**: Split `config.csv` into `instruments.csv` (for connection details) and `config.csv` (for instrument-specific parameters).
-    -   **Per-Setpoint Dwell Time**: Implemented the ability to define a unique `dwell_time` for each setpoint within the instrument's schedule.
-    -   **Auto Mode Default**: "Auto Mode" is now enabled by default on application startup.
-    -   **CSV Timestamp Precision**: Optimized CSV data logging to use second-level timestamp precision.
-    -   **Enhanced Data Export UI**: Improved the data export interface with separate date and time input fields for more precise range selection.
-    -   **Codebase Cleanup**: Removed the unused `hardware_api` directory.
--   **2025-08-27**:
-    -   Refactored `app.py` to preload all instruments on startup instead of on-demand.
-    -   This resolves a bug that caused a Dash callback error (`Output is already in use`) when switching between Simulated and Real modes multiple times.
-    -   The application now manages instrument connections and UI visibility dynamically, improving stability and performance.
+For real instruments (like the `temperature_controller` example), you must edit its `interface.py` file to include the correct SCPI commands for your specific device. The methods to edit are `read_temperature()` and `write_setpoint()`. These are clearly marked in the source code.
