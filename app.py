@@ -37,10 +37,12 @@ instruments = {}
 def load_instruments():
     """
     Loads all instruments defined in instruments.csv and config.csv.
+    If loading fails, it provides a fallback to load the simulator.
     """
     try:
-        instruments_df = pd.read_csv("instruments.csv", quotechar="'")
-        configs_df = pd.read_csv("config.csv", quotechar="'")
+        # Correctly read CSVs without forcing a quote character
+        instruments_df = pd.read_csv("instruments.csv")
+        configs_df = pd.read_csv("config.csv")
         merged_df = pd.merge(instruments_df, configs_df, on='instrument_id', how='left')
 
         for _, row in merged_df.iterrows():
@@ -48,7 +50,8 @@ def load_instruments():
             instrument_type = row['type']
             
             try:
-                config_str = row['config'] if isinstance(row['config'], str) else '{}'
+                # Handle potentially missing or malformed JSON config
+                config_str = row['config'] if pd.notna(row['config']) and isinstance(row['config'], str) else '{}'
                 specific_config = json.loads(config_str)
             except (json.JSONDecodeError, KeyError):
                 specific_config = {}
@@ -67,10 +70,31 @@ def load_instruments():
             instance.register_callbacks(app)
             instruments[instrument_id] = instance
             
-    except (FileNotFoundError, pd.errors.ParserError) as e:
-        logger.error(f"Could not read or parse configuration files: {e}")
+    except (FileNotFoundError, pd.errors.EmptyDataError, KeyError) as e:
+        logger.warning(f"Could not load instruments from configuration files: {e}. Proceeding with fallback.")
+        instruments.clear() # Ensure we start fresh
     except Exception as e:
-        logger.error(f"Error loading instruments: {e}", exc_info=True)
+        logger.error(f"Unexpected error loading instruments: {e}", exc_info=True)
+        instruments.clear()
+
+    # --- Fallback Mechanism ---
+    # If no instruments were loaded from files, load the simulator by default.
+    if not instruments:
+        logger.info("No instruments loaded from config. Loading default simulator.")
+        try:
+            instrument_id = "pid_cooler_sim_default"
+            instrument_type = "pid_cooler_simulator"
+            config = {"schedule": [{"setpoint": 273, "dwell_time": 10}]}
+
+            module_path = f"src.instruments.{instrument_type}.interface"
+            InstrumentClass = getattr(importlib.import_module(module_path), 'InstrumentInterface')
+            
+            instance = InstrumentClass(instrument_id, config)
+            instance.register_callbacks(app)
+            instruments[instrument_id] = instance
+            logger.info(f"Successfully loaded fallback instrument: {instrument_id}")
+        except Exception as e:
+            logger.critical(f"Failed to load even the fallback simulator: {e}", exc_info=True)
 
 # --- API Endpoint ---
 @server.route('/api/v1/instrument/<instrument_id>/state')
@@ -89,7 +113,10 @@ def create_app_layout():
     load_instruments()
     
     if not instruments:
-        return dbc.Alert("No instruments loaded. Check configuration and logs.", color="danger")
+        return dbc.Container(dbc.Alert(
+            "CRITICAL: No instruments loaded, and fallback simulator also failed. Check logs for errors.",
+            color="danger"
+        ), fluid=True)
 
     # Automatically connect to all loaded instruments
     for instrument in instruments.values():
