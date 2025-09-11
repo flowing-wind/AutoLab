@@ -68,7 +68,7 @@ class InstrumentInterface(UnifiedInstrument):
         return True
 
     def disconnect(self) -> bool:
-        """"Disconnects" from the simulator.""""
+        """Disconnects from the simulator."""
         self.device = None
         self.is_connected = False
         logger.info(f"[{self.instrument_id}] Simulator disconnected.")
