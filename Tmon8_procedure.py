@@ -8,12 +8,12 @@ from pymeasure.experiment import Procedure, Parameter
 log = logging.getLogger(__name__)
 log.addHandler(logging.NullHandler())
 
-class TC290Procedure(Procedure):
+class Tmon8Procedure(Procedure):
 
     temperatures = Parameter('Temperature Setpoints', 
                              default='284.2345, 270.0012, 245.5314')
     address = Parameter('Address')
-    
+
     DATA_COLUMNS = ['Time', 'Temperature']
 
     def startup(self):
@@ -35,7 +35,7 @@ class TC290Procedure(Procedure):
             for i in range(100):
                 data = {
                     'Time': datetime.now(),
-                    'Temperature': float(self.device.query('KRDG? A'))
+                    'Temperature': float(self.device.query('KRDG? 1'))
                 }
                 self.emit('results', data)
                 self.emit('progress', i)

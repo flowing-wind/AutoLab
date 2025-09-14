@@ -3,7 +3,6 @@ log = logging.getLogger(__name__)
 log.addHandler(logging.NullHandler())
 
 import sys
-import tempfile
 from time import sleep
 from pymeasure.log import console_log
 from pymeasure.display.Qt import QtWidgets
@@ -17,7 +16,7 @@ class MainWindow(ManagedWindow):
     def __init__(self):
         super().__init__(
             procedure_class=TC290Procedure,
-            inputs=['temperatures'],
+            inputs=['temperatures', 'address'],
             displays=['temperatures'],
             x_axis='Time',
             y_axis='Temperature'
