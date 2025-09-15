@@ -7,6 +7,8 @@ import logging
 import sys
 import os
 
+import STM32_Control
+
 # ==================== 配置区域 ====================
 DEBUG_MODE = True  # 设置为False使用实际仪器，True使用仿真模式
 
@@ -212,6 +214,7 @@ class TemperatureController:
     def stable_function(self):
         # 稳定了以后做的测量操作
         logger.info("执行稳定后的测量操作")
+        STM32_Control.send_trim_commands(0,10)
         pass
 
     def is_temperature_stable(self, target_temp, threshold=0.5):

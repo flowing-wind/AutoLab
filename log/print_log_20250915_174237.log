@@ -1,0 +1,18 @@
+2025-09-15 17:42:37,909 - TemperatureController - WARNING - 文件 F:\Lab\Lab-Protocol\config.csv 未找到，使用默认参数
+2025-09-15 17:42:37,910 - TemperatureController - INFO - 当前温度点为：300K
+2025-09-15 17:42:37,910 - TemperatureController - INFO - 稳定时间为：10秒
+2025-09-15 17:42:37,920 - TemperatureController - INFO - 当前开始稳定计时
+2025-09-15 17:42:48,086 - TemperatureController - INFO - 当前稳定
+2025-09-15 17:42:48,087 - TemperatureController - INFO - 执行稳定后的测量操作
+2025-09-15 17:42:52,903 - TemperatureController - INFO - 收到更新指令，准备切换到下一个设定点
+2025-09-15 17:42:53,082 - TemperatureController - INFO - 更新当前温度点为：298K
+2025-09-15 17:42:53,082 - TemperatureController - INFO - 更新稳定时间为：10秒
+2025-09-15 17:42:54,090 - TemperatureController - INFO - 当前开始稳定计时
+2025-09-15 17:43:04,093 - TemperatureController - INFO - 当前稳定
+2025-09-15 17:43:04,093 - TemperatureController - INFO - 执行稳定后的测量操作
+2025-09-15 17:43:12,856 - TemperatureController - INFO - 收到更新指令，准备切换到下一个设定点
+2025-09-15 17:43:13,095 - TemperatureController - INFO - 更新当前温度点为：295K
+2025-09-15 17:43:13,095 - TemperatureController - INFO - 更新稳定时间为：10秒
+2025-09-15 17:43:14,102 - TemperatureController - INFO - 当前开始稳定计时
+2025-09-15 17:43:24,110 - TemperatureController - INFO - 当前稳定
+2025-09-15 17:43:24,110 - TemperatureController - INFO - 执行稳定后的测量操作
