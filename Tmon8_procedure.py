@@ -26,17 +26,19 @@ class Tmon8Procedure(Procedure):
         log.info(f"Connected to {identity}")
     def execute(self):
         setpoints = [float(t) for t in self.temperatures.split(',')]
-        
+        command_bytes = b'KRDG\xa3\xbf1'
+
         for temp in setpoints:
             log.info(f"Setting temperature to {temp} K")
             self.device.write(f'SETP 1,{temp}')
             sleep(5)
             log.info(f"Starting measurement at {temp} K")
 
+
             for i in range(100):
                 data = {
                     'Time': datetime.now(),
-                    'Temperature': float(self.device.query('KRDG? 1'))
+                    'Temperature': float(self.device.query(command_bytes))
                 }
                 self.emit('results', data)
                 self.emit('progress', i)
