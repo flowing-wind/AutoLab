@@ -9,13 +9,14 @@ from pymeasure.display.Qt import QtWidgets
 from pymeasure.display.windows import ManagedWindow
 
 from tc290_procedure import TC290Procedure
+from Tmon8_procedure import Tmon8Procedure
 
 
 class MainWindow(ManagedWindow):
 
     def __init__(self):
         super().__init__(
-            procedure_class=TC290Procedure,
+            procedure_class=Tmon8Procedure,
             inputs=['temperatures', 'address'],
             displays=['temperatures'],
             x_axis='Time',

@@ -12,7 +12,7 @@ class Tmon8Procedure(Procedure):
 
     temperatures = Parameter('Temperature Setpoints', 
                              default='284.2345, 270.0012, 245.5314')
-    address = Parameter('Address')
+    address = Parameter('Address')     # ASRL5::INSTR
 
     DATA_COLUMNS = ['Time', 'Temperature']
 
@@ -20,9 +20,10 @@ class Tmon8Procedure(Procedure):
         rm = pyvisa.ResourceManager()
         self.device = rm.open_resource(self.address)
         self.device.baud_rate = 115200
+        self.device.read_termination = '\r\n'
+        self.device.write_termination = '\r\n'
         identity = self.device.query('*IDN?').strip()
         log.info(f"Connected to {identity}")
-
     def execute(self):
         setpoints = [float(t) for t in self.temperatures.split(',')]
         
