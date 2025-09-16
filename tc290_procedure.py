@@ -2,6 +2,7 @@ import logging
 from datetime import datetime
 from time import sleep
 import pyvisa
+import serial
 
 from pymeasure.experiment import Procedure, Parameter
 
@@ -23,6 +24,12 @@ class TC290Procedure(Procedure):
         identity = self.device.query('*IDN?').strip()
         log.info(f"Connected to {identity}")
 
+        ser = serial.Serial("COM4", 115200)
+        if ser.isOpen():
+            log.info("COM4 connected.")
+        else:
+            log.info("Cannot connect to COM4.")
+
     def execute(self):
         setpoints = [float(t) for t in self.temperatures.split(',')]
         
@@ -39,6 +46,9 @@ class TC290Procedure(Procedure):
                 }
                 self.emit('results', data)
                 self.emit('progress', i)
+                self.ser.write(f"Trim:{i}".encode('ascii'))
+                Trim = self.ser.read(1024)
+                log.info(f"{Trim}")
                 sleep(0.1)
 
                 if self.should_stop():

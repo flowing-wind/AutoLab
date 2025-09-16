@@ -2,6 +2,7 @@ import logging
 from datetime import datetime
 from time import sleep
 import pyvisa
+import serial
 
 from pymeasure.experiment import Procedure, Parameter
 
@@ -24,6 +25,13 @@ class Tmon8Procedure(Procedure):
         self.device.write_termination = '\r\n'
         identity = self.device.query('*IDN?').strip()
         log.info(f"Connected to {identity}")
+
+        ser = serial.Serial("COM4", 115200)
+        if ser.isOpen():
+            log.info("COM4 connected.")
+        else:
+            log.info("Cannot connect to COM4.")
+
     def execute(self):
         setpoints = [float(t) for t in self.temperatures.split(',')]
         command_bytes = b'KRDG\xa3\xbf1'
@@ -32,16 +40,18 @@ class Tmon8Procedure(Procedure):
             log.info(f"Setting temperature to {temp} K")
             self.device.write(f'SETP 1,{temp}')
             sleep(5)
-            log.info(f"Starting measurement at {temp} K")
+            log.info(f"Starting measurement at {temp} K")     # stable
 
-
-            for i in range(100):
+            for i in range(65536):
                 data = {
                     'Time': datetime.now(),
                     'Temperature': float(self.device.query(command_bytes))
                 }
                 self.emit('results', data)
                 self.emit('progress', i)
+                self.ser.write(f"Trim:{i}".encode('ascii'))
+                Trim = self.ser.read(1024)
+                log.info(f"{Trim}")
                 sleep(0.1)
 
                 if self.should_stop():
