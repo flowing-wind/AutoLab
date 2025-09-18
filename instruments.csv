@@ -1,3 +1,0 @@
-instrument_id,type,visa_address
-pid_cooler_sim,pid_cooler_simulator,none
-TC290,temperature_controller,ASRL3::INSTR

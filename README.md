@@ -1,122 +1,101 @@
-# Lab Instrument Control Panel
+# AutoLab: Automated Measurement System
 
-## 1. Introduction
+![AutoLab GUI](./autolab_screenshot.png) 
 
-This project provides a modular, web-based control panel for laboratory instruments. It is designed for high cohesion and low coupling, allowing new instruments to be added easily. The front end is built with Python Dash and Plotly for a modern user experience. The application can be run in either a **Real Mode**, interfacing with physical hardware via VISA, or a **Simulated Mode**, which runs a virtual instrument for testing and development.
+AutoLab is an automated measurement system built with Python and the [Pymeasure](https://pymeasure.readthedocs.io/en/latest/) library. It is designed to simplify and automate the experimental workflow for characterizing physical properties of materials, such as voltage-temperature dependence. The system provides a unified graphical user interface (GUI) to control multiple instruments, execute pre-defined experimental sequences, and log data automatically.
 
-## 2. Features
+## ✨ Features
 
--   **Modular Architecture**: Each instrument is a self-contained package.
--   **Dual-Mode Operation**: Switch between a real VISA instrument and a fully simulated instrument directly from the UI.
--   **Web-Based UI**: A responsive user interface built with Dash and Dash Bootstrap Components.
--   **Dynamic Configuration**: The active instrument is loaded at runtime based on the selected mode and the `instruments.csv` and `config.csv` files.
--   **Per-Setpoint Dwell Time**: Configure individual stability dwell times for each setpoint in the temperature schedule.
--   **Automated Control**: "Auto Mode" is enabled by default, allowing the system to automatically advance through setpoints once stability is achieved.
--   **Persistent Data Logging**: All instrument data is logged to CSV files with second-level timestamp precision, and logs are automatically trimmed to manage file size.
--   **Data Export**: Export historical data for a specified date and time range directly from the UI.
--   **External API**: A REST API is exposed to allow other applications to access live data from the currently active instrument.
--   **Unified Interface**: All instruments adhere to a common base class, ensuring consistent behavior.
+- **Graphical User Interface (GUI)**: Built with PyMeasure and PyQt for a user-friendly experience, featuring real-time plotting of experimental data.
+- **Multi-Instrument Control**: Simultaneously controls temperature controllers (e.g., TC290, Tmon8), a Keithley 2182 Nanovoltmeter, and custom devices via serial communication.
+- **Automated Experiment Sequencing**: Define a series of setpoints (e.g., different temperatures and hold times) in a simple text file (`sequence.txt`) for unattended, automated measurements.
+- **Flexible Configuration**: Easily configure instrument addresses, communication ports, and other experimental parameters through the GUI or in the code.
+- **Automatic Data Logging**: Experimental data (time, temperature, voltage, etc.) is automatically saved to `.csv` files for easy post-processing and analysis.
+- **Extensible**: The modular code structure makes it straightforward to add support for new instruments or measurement procedures.
 
-## 3. Directory Structure
+## 🛠️ Getting Started
 
-```
-E:\Projects\Lab-Protocol\
-├── src/
-│   └── instruments/
-│       ├── base.py                     # Abstract base class for all instruments
-│       ├── temperature_controller/     # REAL instrument package for VISA hardware
-│       │   ├── interface.py
-│       │   └── layout.py
-│       └── pid_cooler_simulator/       # SIMULATED instrument package for development/testing
-│           ├── interface.py
-│           └── layout.py
-├── tests/
-│   └── test_temperature_controller.py
-├── log/
-├── Resource/
-├── app.py                  # Main Dash application entry point
-├── config.csv              # Instrument specific configuration parameters
-├── instruments.csv         # Instrument connection and type definitions
-├── environment.yaml        # Conda environment dependencies
-└── README.md               # This file
-```
+Before running the project, ensure you have the necessary Python libraries and hardware drivers installed.
 
-## 4. Usage / Installation
+### 1. Prerequisites
 
-### 4.1. Environment Setup
+- **Python**: Python 3.11 or higher is recommended.
+- **Hardware Drivers**:
+  - **NI-VISA**: To communicate with instruments via GPIB or ASRL (VISA Serial), you must install the [NI-VISA](https://www.ni.com/en-us/support/downloads/drivers/download.ni-visa.html) driver.
+  - **Serial Port Drivers**: If you are using a USB-to-Serial adapter, ensure the appropriate drivers (e.g., CH340, FTDI) are installed.
 
-This project uses Conda for environment management. To create and activate the environment, run:
+### 2. Installation
+
+Clone this repository and install the required Python packages using `pip`:
 
 ```bash
-# 1. Create the environment from the YAML file
-conda env create -f environment.yaml
-
-# 2. Activate the environment
-conda activate lab-protocol
+git clone <your-repository-url>
+cd AutoLab
+pip install pymeasure pyvisa pyqt5 pyserial
 ```
 
-### 4.2. Instrument Configuration
+## 🚀 Usage
 
-Instrument configurations are now split into two files for better organization:
+### 1. Connect Hardware
 
--   `instruments.csv`: Defines the instrument instances, their types, and connection details (e.g., VISA address).
--   `config.csv`: Contains instrument-specific operational parameters, including the temperature schedule with individual dwell times for each setpoint.
+- Connect the temperature controller, Keithley 2182 nanovoltmeter, and the serial device to your computer.
+- Use a tool like NI MAX to identify and note the VISA address for each instrument (e.g., `GPIB::1`, `ASRL5::INSTR`) and the COM port for the serial device (e.g., `COM4`).
 
-**Example `instruments.csv`:**
-```csv
-instrument_id,type,visa_address
-TC290,temperature_controller,ASRL3::INSTR
-pid_cooler_sim,pid_cooler_simulator,none
-```
+### 2. Configure Parameters
 
-**Example `config.csv` (with per-setpoint dwell times):**
-```csv
-instrument_id,config
-TC290,'{"schedule": [{"setpoint": 300, "dwell_time": 10}, {"setpoint": 295, "dwell_time": 15}, {"setpoint": 290, "dwell_time": 20}]}'
-pid_cooler_sim,'{"schedule": [{"setpoint": 273, "dwell_time": 10}, {"setpoint": 250, "dwell_time": 10}, {"setpoint": 220, "dwell_time": 10}, {"setpoint": 200, "dwell_time": 10}]}'
-```
+- **Instrument Addresses**: Open `app.py` and modify the default values for the parameters in the `OverallProcedure` class to match your setup:
+  
+  - `addr_tempContr`: The VISA address of your temperature controller.
+  - `addr_2182`: The VISA address of the Keithley 2182.
+  - `addr_port`: The port name of your serial device.
+- **Experiment Sequence (Optional)**:
+  - Edit the `sequence.txt` file to define your automated measurement sequence.
+  - The format consists of one parameter sequence per line:
+    ```
+    - "Temperature", "[270, 250, 210, 150, 77]"
+    - "Hold Time", "[10, 15, 5, 10, 20]"
+    ```
+    This sequence will run 5 experiments: the first at 270 K with a 10s hold time, the second at 250 K with a 15s hold time, and so on.
 
-The `config` column in `config.csv` is a JSON string containing a `schedule` array. Each object in the `schedule` array specifies a `setpoint` (target temperature) and its corresponding `dwell_time` (time in seconds the system must remain stable at that setpoint before advancing).
+### 3. Run the Application
 
-### 4.3. Running the Application
-
-Once the environment is activated, start the web server:
+Navigate to the project directory in your terminal and run the main script:
 
 ```bash
 python app.py
 ```
 
-The application will be available at `http://127.0.0.1:8050`. By default, it starts in **Simulated Mode**. Use the radio buttons in the navigation bar to switch between **Simulated** and **Real** modes.
+### 4. Operating the GUI
 
-## 5. Connecting to Real Hardware
+1.  In the **Procedure Inputs** panel on the left, verify or update the instrument addresses and other settings.
+2.  In the **Sequencer** panel, you can load, edit, or clear the experiment sequence.
+3.  Click the **Browse** button to set the desired path and filename for the output data file.
+4.  Click the **Queue** button to add the configured experiment to the run queue.
+5.  Click the **Run** button to start the measurement.
+6.  The plot windows on the right will display real-time data for temperature and voltage versus time.
+7.  Upon completion, the data will be saved to the specified `.csv` file.
 
-The `temperature_controller` module is designed to connect to a real instrument via VISA. To make it work with your specific hardware, you need to edit the following methods in `src/instruments/temperature_controller/interface.py`:
+## 📁 Project Structure
 
--   `get_temperature_from_device(self) -> float`:
-    -   Replace the placeholder code with the SCPI command that queries your device for its temperature.
--   `set_setpoint_on_device(self, temp: float)`:
-    -   Replace the placeholder code with the SCPI command that sets a new temperature setpoint on your device.
-
-These methods are clearly marked with `!! This is a placeholder !!` in the source code.
-
-## 6. Testing
-
-Unit tests are located in the `tests/` directory. To run a specific test file, execute the following command from the project root:
-
-```bash
-python -m unittest tests/test_temperature_controller.py
+```
+AutoLab/
+├── app.py                      # Main application script with procedure and GUI logic
+├── sequence.txt                # Default experiment sequence configuration file
+├── OverallProcedure_dock_layout.json # GUI dock layout configuration
+├── measurements/               # Default directory for measurement data (create if needed)
+└── README.md                   # This README file
 ```
 
-## 7. Changelog
+## 🤝 Contributing
 
--   **2025-08-28**:
-    -   **Configuration Refactor**: Split `config.csv` into `instruments.csv` (for connection details) and `config.csv` (for instrument-specific parameters).
-    -   **Per-Setpoint Dwell Time**: Implemented the ability to define a unique `dwell_time` for each setpoint within the instrument's schedule.
-    -   **Auto Mode Default**: "Auto Mode" is now enabled by default on application startup.
-    -   **CSV Timestamp Precision**: Optimized CSV data logging to use second-level timestamp precision.
-    -   **Enhanced Data Export UI**: Improved the data export interface with separate date and time input fields for more precise range selection.
-    -   **Codebase Cleanup**: Removed the unused `hardware_api` directory.
--   **2025-08-27**:
-    -   Refactored `app.py` to preload all instruments on startup instead of on-demand.
-    -   This resolves a bug that caused a Dash callback error (`Output is already in use`) when switching between Simulated and Real modes multiple times.
-    -   The application now manages instrument connections and UI visibility dynamically, improving stability and performance.
+Contributions are welcome! If you have suggestions for improvements or want to add new features, please feel free to:
+
+1.  Fork the repository
+2.  Create your feature branch
+3.  Commit your changes
+4.  Push to the branch
+5.  Open a Pull Request
+
+## 📄 License
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
