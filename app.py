@@ -62,6 +62,8 @@ class OverallProcedure(Procedure):
         self.start_time = time()
 
     # temperature controls
+    def temp_set(self, tempSet):
+        self.tempContr.write(f'SETP 1,{tempSet}\n')
     def temp_get(self):
         if self.inst_select == 'TC290':
             temp = self.tempContr.query('KRDG? A')
@@ -70,7 +72,6 @@ class OverallProcedure(Procedure):
             temp = self.tempContr.query(command)
             temp = temp.strip() 
         return float(temp)
-    
     def temp_stable(self, setTemp, HoldTime):
         """
         Waits until the temperature is stable within a defined range for a specified duration.
@@ -108,8 +109,7 @@ class OverallProcedure(Procedure):
     # port controls (unchanged)
     def port_sendCommand(self, num):
         command = f"Trim:{num}\r\n"
-        self.ser.write(command.encode('ascii'))
-        
+        self.ser.write(command.encode('ascii'))      
     def port_receive(self):
         response_lines = []
         empty_read_count = 0
@@ -128,6 +128,7 @@ class OverallProcedure(Procedure):
                 else:
                     continue
         return response_lines
+
 
     def execute(self):
         log.info(f"Starting measurement for Temperature: {self.Temperature} K")
