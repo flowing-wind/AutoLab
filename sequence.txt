@@ -1,2 +1,11 @@
-- "Temperature", "[298, 296, 294, 292]"
-- "HoldTime", "[60, 65, 55, 61]"
+- "Temperature", "[298]"
+-- "HoldTime", "[60]"
+
+- "Temperature", "[296]"
+-- "HoldTime", "[65]"
+
+- "Temperature", "[294]"
+-- "HoldTime", "[55]"
+
+- "Temperature", "[292]"
+-- "HoldTime", "[61]"

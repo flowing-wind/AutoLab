@@ -3,7 +3,6 @@ log = logging.getLogger(__name__)
 log.addHandler(logging.NullHandler())
 
 import sys
-import random
 from time import sleep, time
 from pymeasure.display.Qt import QtWidgets
 from pymeasure.display.windows.managed_dock_window import ManagedDockWindow
@@ -16,11 +15,13 @@ current_time = datetime.now().strftime('%Y%m%d_%H%M%S')
 import pyvisa
 from pymeasure.instruments.keithley import Keithley2182
 import serial
-import numpy as np # Using numpy for NaN
-import threading # For background monitoring
-
+import numpy as np
+import threading
 
 class OverallProcedure(Procedure):
+
+    # 全局计时器，由所有实例共享
+    _overall_start_time = None
 
     Temperature = FloatParameter('Temperature', units='K', default=298)
     HoldTime = FloatParameter('HoldTime', units='s', default=60)
@@ -35,35 +36,25 @@ class OverallProcedure(Procedure):
 
     def startup(self):
         log.info("Connecting to instruments...")
-        self.instrument_lock = threading.Lock() # Lock for thread-safe instrument access
+        self.instrument_lock = threading.Lock()
         rm = pyvisa.ResourceManager()
         
-        # connect to temperature controller
         self.tempContr = rm.open_resource(self.addr_tempContr)
         self.tempContr.baud_rate = 115200
         self.tempContr.flush(pyvisa.constants.VI_READ_BUF_DISCARD | pyvisa.constants.VI_WRITE_BUF_DISCARD)
         identity = self.tempContr.query('*IDN?').strip()
         log.info(f"Connected to {identity}")
         
-        # connect to nanovoltmeter
         self.nanovoltmeter = Keithley2182(self.addr_2182)
-        self.nanovoltmeter.adapter.connection.timeout = 10000 # 10-second timeout
+        self.nanovoltmeter.adapter.connection.timeout = 10000
         self.nanovoltmeter.reset()
         self.nanovoltmeter.thermocouple = 'S'
         self.nanovoltmeter.ch_1.setup_voltage()
         log.info(f"Connected to Keithley 2182 at {self.addr_2182}")
         
-        # connect to COM
-        self.ser = serial.Serial(
-            port=self.addr_port,
-            baudrate=115200,
-            timeout=0.2
-        )
+        self.ser = serial.Serial(port=self.addr_port, baudrate=115200, timeout=0.2)
         log.info(f"Opened COM port at {self.addr_port}")
 
-        self.start_time = time()
-
-        # Start background monitoring
         self.monitoring_running = True
         self.monitoring_thread = threading.Thread(target=self._monitor_instruments)
         self.monitoring_thread.daemon = True
@@ -71,32 +62,34 @@ class OverallProcedure(Procedure):
         log.info("Started background instrument monitoring.")
 
     def _monitor_instruments(self):
-        """Runs in a background thread to continuously read temperature and voltage."""
         while self.monitoring_running:
             try:
+                # 确保全局计时器已启动，否则等待
+                if OverallProcedure._overall_start_time is None:
+                    sleep(0.1)
+                    continue
+
                 with self.instrument_lock:
                     current_temp = self._temp_get_unlocked()
                     voltage = self.nanovoltmeter.voltage
                 
-                elapsed_time = time() - self.start_time
+                elapsed_time = time() - OverallProcedure._overall_start_time
                 
-                # Use NaN for overload condition
                 if voltage >= 9.9e37:
                     voltage = np.nan
 
                 data = {
                     'Time (s)': elapsed_time,
                     'Temperature (K)': current_temp,
-                    'Trim': np.nan, # No trim value during general monitoring
+                    'Trim': np.nan,
                     'Voltage (V)': voltage,
                 }
                 self.emit('results', data)
             except Exception as e:
                 log.error(f"Error in monitoring thread: {e}")
             
-            sleep(0.5) # Update interval
+            sleep(0.5)
 
-    # temperature controls
     def temp_set(self, tempSet):
         with self.instrument_lock:
             if self.inst_select == 'TC290':
@@ -105,7 +98,6 @@ class OverallProcedure(Procedure):
                 self.tempContr.write(f'SETP 1,{tempSet}\r\n')
 
     def _temp_get_unlocked(self):
-        """Internal temp_get without a lock, to be used by locked methods."""
         if self.inst_select == 'TC290':
             temp = self.tempContr.query('KRDG? A')
         elif self.inst_select == 'Tmon8':
@@ -120,28 +112,20 @@ class OverallProcedure(Procedure):
             return self._temp_get_unlocked()
 
     def temp_stable(self, setTemp, HoldTime):
-        """
-        Waits until the temperature is stable within a defined range for a specified duration.
-        Returns True when stable, continues indefinitely otherwise.
-        """
         lower_bound = setTemp - 0.5
         upper_bound = setTemp + 0.5
         stable_start_time = None
         log.info(f"Waiting for temperature to stabilize between {lower_bound:.2f} K and {upper_bound:.2f} K.")
-
         while True:
             if self.should_stop():
                 log.warning("Stop signal received while waiting for temperature stabilization.")
-                return False # Indicate that stabilization was interrupted
-
-            current_temp = self.temp_get() # This now uses the lock
+                return False
+            current_temp = self.temp_get()
             log.debug(f"Current temperature: {current_temp:.2f} K")
-
             if lower_bound <= current_temp <= upper_bound:
                 if stable_start_time is None:
                     stable_start_time = time()
                     log.info(f"Temperature entered stability range. Holding for {HoldTime} s.")
-
                 elapsed_stable_time = time() - stable_start_time
                 if elapsed_stable_time >= HoldTime:
                     log.info(f"Temperature has been stable for {HoldTime} s. Proceeding.")
@@ -150,14 +134,13 @@ class OverallProcedure(Procedure):
                 if stable_start_time is not None:
                     log.info("Temperature moved out of stability range. Resetting hold timer.")
                     stable_start_time = None
-            
-            sleep(1) # Wait for 1 second between checks
+            sleep(1)
 
-    # port controls (unchanged)
     def port_sendCommand(self, num):
         with self.instrument_lock:
             command = f"Trim:{num}\r\n"
             self.ser.write(command.encode('ascii'))      
+            
     def port_receive(self):
         with self.instrument_lock:
             response_lines = []
@@ -177,15 +160,13 @@ class OverallProcedure(Procedure):
                     else:
                         continue
             return response_lines
-
-
+            
     def execute(self):
-        log.info(f"Starting measurement for Temperature: {self.Temperature} K")
+        log.info(f"Starting measurement for Temperature: {self.Temperature} K, HoldTime: {self.HoldTime} s")
         self.temp_set(self.Temperature)
         sleep(0.5)
-        # sleep (self.HoldTime)
+        
         if not self.temp_stable(self.Temperature, self.HoldTime):
-             # If stabilization was stopped by the user, abort the rest of the procedure
             log.warning("Aborting measurement sequence due to interruption during stabilization.")
             return
         
@@ -196,7 +177,7 @@ class OverallProcedure(Procedure):
             start, stop, step = trims[0], trims[1], 1
         elif len(trims) == 3:
             start, stop, step = trims[0], trims[1], trims[2]
-        else: # Add a fallback for malformed input
+        else:
             log.error(f"Invalid Trim parameter format: '{self.trim}'. Aborting.")
             return
 
@@ -216,38 +197,34 @@ class OverallProcedure(Procedure):
 
             with self.instrument_lock:
                 voltage = self.nanovoltmeter.voltage
-                current_temp = self._temp_get_unlocked() # Use unlocked version as we already have the lock
+                current_temp = self._temp_get_unlocked()
 
-            # Keithley instruments often return a very large number (e.g., 9.9E37) on overload.
             if voltage >= 9.9e37:
                 log.warning(f"Keithley 2182 is in an overload state at Trim={Trim}. Recording NaN.")
-                voltage = np.nan # Use Not-a-Number for invalid readings
+                voltage = np.nan
             
-            elapsed_time = time() - self.start_time
+            elapsed_time = time() - OverallProcedure._overall_start_time
             
             data = {
                 'Time (s)': elapsed_time,
                 'Temperature (K)': current_temp,
                 'Trim': Trim,
-                'Voltage (V)': voltage, # Corrected key
+                'Voltage (V)': voltage,
             }
             self.emit('results', data)
             self.emit('progress', 100 * (i + 1) / total_steps)
-            sleep(0.1) # Small delay to prevent overwhelming the instruments
+            sleep(0.1)
 
     def shutdown(self):
         log.info("Shutting down all instruments.")
-        
-        # Stop the monitoring thread first
         self.monitoring_running = False
         if hasattr(self, 'monitoring_thread'):
             self.monitoring_thread.join()
         log.info("Stopped background monitoring.")
-
         if hasattr(self, 'tempContr'):
             self.tempContr.close()
         if hasattr(self, 'nanovoltmeter'):
-            self.nanovoltmeter.shutdown() # Use pymeasure's shutdown method
+            self.nanovoltmeter.shutdown()
         if hasattr(self, 'ser') and self.ser.is_open:
             self.ser.close()
         log.info("Shutdown complete.")
@@ -257,27 +234,32 @@ class MainWindow(ManagedDockWindow):
     def __init__(self):
         super().__init__(
             procedure_class=OverallProcedure,
-            inputs=['inst_select', 'addr_tempContr', 'addr_2182', 'addr_port', 'trim'],
-            # FIX 2: Changed 'Trim' to 'trim' to match the parameter variable name
+            inputs=['inst_select', 'addr_tempContr', 'addr_2182', 'addr_port', 'trim', 'Temperature', 'HoldTime'],
             displays=['Temperature', 'trim', 'HoldTime'],
-            # FIX 1: Added a comma at the end of this line
             x_axis='Time (s)',
             y_axis=['Temperature (K)', 'Voltage (V)'],
             sequencer=True,
             sequencer_inputs=['Temperature', 'HoldTime'],
-            sequence_file='sequence.txt' 
+            sequence_file='sequence.txt'
         )
-
         self.setWindowTitle('AutoLab')
-        # The filename is now generated with seconds, making it unique per run
         self.filename = f'{current_time}.csv'
         self.directory = r'./measurements/'
         self.store_measurement = False
         self.file_input.extensions = ["csv", "txt"]
 
+    def queue(self, procedure=None):
+        # 检查Manager是否正在运行。如果不在运行，说明这是一个新的序列的开始。
+        if not self.manager.is_running():
+            # 在将第一个任务添加到队列之前，设置全局起始时间。
+            OverallProcedure._overall_start_time = time()
+            log.info(f"A new sequence is starting. Global timer initiated.")
+        
+        # 调用父类的原始queue方法，以确保实验能被正常添加到队列中。
+        super().queue(procedure=procedure)
+
 
 if __name__ == "__main__":
-    # Setup basic logging to console
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
     
     app = QtWidgets.QApplication(sys.argv)
