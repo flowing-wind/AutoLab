@@ -17,29 +17,31 @@ import pyvisa
 from pymeasure.instruments.keithley import Keithley2182
 import serial
 import numpy as np # Using numpy for NaN
+import threading # For background monitoring
 
 
 class OverallProcedure(Procedure):
 
-    Temperature = FloatParameter('Temperature', units='K')
-    HoldTime = FloatParameter('HoldTime', units='s')
+    Temperature = FloatParameter('Temperature', units='K', default=298)
+    HoldTime = FloatParameter('HoldTime', units='s', default=60)
 
     inst_select = ListParameter('TemperatureController', choices=['TC290', 'Tmon8'], default='TC290')
-    addr_tempContr = Parameter('TmpContr_addr', default="ASRL5::INSTR")
-    addr_2182 = Parameter('Inst_addr', default="GPIB::1")
-    addr_port = Parameter('Port', default="COM4")
-    trim = Parameter('Trim', default="0, 65536, 1")
+    addr_tempContr = Parameter('TmpContr_addr', default="ASRL3::INSTR")
+    addr_2182 = Parameter('Inst_addr', default="GPIB::22")
+    addr_port = Parameter('Port', default="COM7")
+    trim = Parameter('Trim', default="0, 20, 1")
 
-    DATA_COLUMNS = ['Time (s)', 'Temperature (K)', 'Trim', 'Volt (V)']
+    DATA_COLUMNS = ['Time (s)', 'Temperature (K)', 'Trim', 'Voltage (V)']
 
     def startup(self):
         log.info("Connecting to instruments...")
+        self.instrument_lock = threading.Lock() # Lock for thread-safe instrument access
         rm = pyvisa.ResourceManager()
         
         # connect to temperature controller
         self.tempContr = rm.open_resource(self.addr_tempContr)
-        self.tempContr.timeout = 10000  # 10-second timeout in milliseconds
         self.tempContr.baud_rate = 115200
+        self.tempContr.flush(pyvisa.constants.VI_READ_BUF_DISCARD | pyvisa.constants.VI_WRITE_BUF_DISCARD)
         identity = self.tempContr.query('*IDN?').strip()
         log.info(f"Connected to {identity}")
         
@@ -61,17 +63,62 @@ class OverallProcedure(Procedure):
 
         self.start_time = time()
 
+        # Start background monitoring
+        self.monitoring_running = True
+        self.monitoring_thread = threading.Thread(target=self._monitor_instruments)
+        self.monitoring_thread.daemon = True
+        self.monitoring_thread.start()
+        log.info("Started background instrument monitoring.")
+
+    def _monitor_instruments(self):
+        """Runs in a background thread to continuously read temperature and voltage."""
+        while self.monitoring_running:
+            try:
+                with self.instrument_lock:
+                    current_temp = self._temp_get_unlocked()
+                    voltage = self.nanovoltmeter.voltage
+                
+                elapsed_time = time() - self.start_time
+                
+                # Use NaN for overload condition
+                if voltage >= 9.9e37:
+                    voltage = np.nan
+
+                data = {
+                    'Time (s)': elapsed_time,
+                    'Temperature (K)': current_temp,
+                    'Trim': np.nan, # No trim value during general monitoring
+                    'Voltage (V)': voltage,
+                }
+                self.emit('results', data)
+            except Exception as e:
+                log.error(f"Error in monitoring thread: {e}")
+            
+            sleep(0.5) # Update interval
+
     # temperature controls
     def temp_set(self, tempSet):
-        self.tempContr.write(f'SETP 1,{tempSet}\n')
-    def temp_get(self):
+        with self.instrument_lock:
+            if self.inst_select == 'TC290':
+                self.tempContr.write(f'SETP 1,{tempSet}')
+            elif self.inst_select == 'Tmon8':
+                self.tempContr.write(f'SETP 1,{tempSet}\r\n')
+
+    def _temp_get_unlocked(self):
+        """Internal temp_get without a lock, to be used by locked methods."""
         if self.inst_select == 'TC290':
             temp = self.tempContr.query('KRDG? A')
         elif self.inst_select == 'Tmon8':
             command = b'KRDG\xa3\xbf1'
-            temp = self.tempContr.query(command)
-            temp = temp.strip() 
+            self.tempContr.write_raw(command)
+            response = self.tempContr.read_raw()
+            temp = response.decode('ascii', errors='ignore').strip()
         return float(temp)
+
+    def temp_get(self):
+        with self.instrument_lock:
+            return self._temp_get_unlocked()
+
     def temp_stable(self, setTemp, HoldTime):
         """
         Waits until the temperature is stable within a defined range for a specified duration.
@@ -87,9 +134,9 @@ class OverallProcedure(Procedure):
                 log.warning("Stop signal received while waiting for temperature stabilization.")
                 return False # Indicate that stabilization was interrupted
 
-            current_temp = self.temp_get()
+            current_temp = self.temp_get() # This now uses the lock
             log.debug(f"Current temperature: {current_temp:.2f} K")
-            
+
             if lower_bound <= current_temp <= upper_bound:
                 if stable_start_time is None:
                     stable_start_time = time()
@@ -108,37 +155,39 @@ class OverallProcedure(Procedure):
 
     # port controls (unchanged)
     def port_sendCommand(self, num):
-        command = f"Trim:{num}\r\n"
-        self.ser.write(command.encode('ascii'))      
+        with self.instrument_lock:
+            command = f"Trim:{num}\r\n"
+            self.ser.write(command.encode('ascii'))      
     def port_receive(self):
-        response_lines = []
-        empty_read_count = 0
-        max_empty_reads = 3
-        while True:
-            line = self.ser.readline()
-            if line:
-                decoded_line = line.decode('ascii', errors='ignore').strip()
-                response_lines.append(decoded_line)
-                if "================================" in decoded_line:
-                    break
-            else:
-                empty_read_count += 1
-                if empty_read_count >= max_empty_reads:
-                    break
+        with self.instrument_lock:
+            response_lines = []
+            empty_read_count = 0
+            max_empty_reads = 3
+            while True:
+                line = self.ser.readline()
+                if line:
+                    decoded_line = line.decode('ascii', errors='ignore').strip()
+                    response_lines.append(decoded_line)
+                    if "================================" in decoded_line:
+                        break
                 else:
-                    continue
-        return response_lines
+                    empty_read_count += 1
+                    if empty_read_count >= max_empty_reads:
+                        break
+                    else:
+                        continue
+            return response_lines
 
 
     def execute(self):
         log.info(f"Starting measurement for Temperature: {self.Temperature} K")
         self.temp_set(self.Temperature)
-         
-        sleep (self.HoldTime)
-        # if not self.temp_stable(self.Temperature, self.HoldTime):
-        #      # If stabilization was stopped by the user, abort the rest of the procedure
-        #     log.warning("Aborting measurement sequence due to interruption during stabilization.")
-        #     return
+        sleep(0.5)
+        # sleep (self.HoldTime)
+        if not self.temp_stable(self.Temperature, self.HoldTime):
+             # If stabilization was stopped by the user, abort the rest of the procedure
+            log.warning("Aborting measurement sequence due to interruption during stabilization.")
+            return
         
         trims = [int(p.strip()) for p in self.trim.split(',')]
         if len(trims) == 1:
@@ -165,20 +214,22 @@ class OverallProcedure(Procedure):
             full_response_str = "\n".join(port_response)
             log.info(f"Received from COM port for Trim={Trim}:\n---\n{full_response_str}\n---")
 
-            voltage = self.nanovoltmeter.voltage
+            with self.instrument_lock:
+                voltage = self.nanovoltmeter.voltage
+                current_temp = self._temp_get_unlocked() # Use unlocked version as we already have the lock
+
             # Keithley instruments often return a very large number (e.g., 9.9E37) on overload.
             if voltage >= 9.9e37:
                 log.warning(f"Keithley 2182 is in an overload state at Trim={Trim}. Recording NaN.")
                 voltage = np.nan # Use Not-a-Number for invalid readings
             
             elapsed_time = time() - self.start_time
-            current_temp = self.temp_get()
             
             data = {
                 'Time (s)': elapsed_time,
                 'Temperature (K)': current_temp,
                 'Trim': Trim,
-                'Volt (V)': voltage,
+                'Voltage (V)': voltage, # Corrected key
             }
             self.emit('results', data)
             self.emit('progress', 100 * (i + 1) / total_steps)
@@ -186,6 +237,13 @@ class OverallProcedure(Procedure):
 
     def shutdown(self):
         log.info("Shutting down all instruments.")
+        
+        # Stop the monitoring thread first
+        self.monitoring_running = False
+        if hasattr(self, 'monitoring_thread'):
+            self.monitoring_thread.join()
+        log.info("Stopped background monitoring.")
+
         if hasattr(self, 'tempContr'):
             self.tempContr.close()
         if hasattr(self, 'nanovoltmeter'):
@@ -199,10 +257,12 @@ class MainWindow(ManagedDockWindow):
     def __init__(self):
         super().__init__(
             procedure_class=OverallProcedure,
-            inputs=['inst_select', 'addr_tempContr', 'addr_2182', 'addr_port', 'trim', 'Temperature', 'HoldTime'],
-            displays=[],
-            x_axis='Time (s)', # Corrected: displays expects single values
-            y_axis=['Temperature (K)','Volt (V)'],
+            inputs=['inst_select', 'addr_tempContr', 'addr_2182', 'addr_port', 'trim'],
+            # FIX 2: Changed 'Trim' to 'trim' to match the parameter variable name
+            displays=['Temperature', 'trim', 'HoldTime'],
+            # FIX 1: Added a comma at the end of this line
+            x_axis='Time (s)',
+            y_axis=['Temperature (K)', 'Voltage (V)'],
             sequencer=True,
             sequencer_inputs=['Temperature', 'HoldTime'],
             sequence_file='sequence.txt' 
@@ -225,4 +285,3 @@ if __name__ == "__main__":
     window.resize(1200, 800)
     window.show()
     sys.exit(app.exec())
-
