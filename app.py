@@ -22,7 +22,7 @@ import numpy as np # Using numpy for NaN
 class OverallProcedure(Procedure):
 
     Temperature = FloatParameter('Temperature', units='K')
-    HoldTime = FloatParameter('Hold Time', units='s')
+    HoldTime = FloatParameter('HoldTime', units='s')
 
     inst_select = ListParameter('TemperatureController', choices=['TC290', 'Tmon8'], default='TC290')
     addr_tempContr = Parameter('TmpContr_addr', default="ASRL5::INSTR")
@@ -198,7 +198,7 @@ class MainWindow(ManagedDockWindow):
     def __init__(self):
         super().__init__(
             procedure_class=OverallProcedure,
-            inputs=['inst_select', 'addr_tempContr', 'addr_2182', 'addr_port', 'trim'],
+            inputs=['inst_select', 'addr_tempContr', 'addr_2182', 'addr_port', 'trim', 'Temperature', 'HoldTime'],
             displays=[],
             x_axis='Time (s)', # Corrected: displays expects single values
             y_axis=['Temperature (K)','Volt (V)'],
