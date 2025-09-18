@@ -20,7 +20,6 @@ import threading
 
 class OverallProcedure(Procedure):
 
-    # 全局计时器，由所有实例共享
     _overall_start_time = None
 
     Temperature = FloatParameter('Temperature', units='K', default=298)
@@ -37,6 +36,11 @@ class OverallProcedure(Procedure):
     def startup(self):
         log.info("Connecting to instruments...")
         self.instrument_lock = threading.Lock()
+
+        # MODIFICATION START: Add a flag to control the monitoring thread's output
+        self.is_scanning = False
+        # MODIFICATION END
+
         rm = pyvisa.ResourceManager()
         
         self.tempContr = rm.open_resource(self.addr_tempContr)
@@ -64,7 +68,13 @@ class OverallProcedure(Procedure):
     def _monitor_instruments(self):
         while self.monitoring_running:
             try:
-                # 确保全局计时器已启动，否则等待
+                # MODIFICATION START: Check the flag before emitting results
+                # If we are in the main scanning loop, do not emit from the monitor.
+                if self.is_scanning:
+                    sleep(0.5)
+                    continue
+                # MODIFICATION END
+
                 if OverallProcedure._overall_start_time is None:
                     sleep(0.1)
                     continue
@@ -172,48 +182,69 @@ class OverallProcedure(Procedure):
         
         trims = [int(p.strip()) for p in self.trim.split(',')]
         if len(trims) == 1:
-            start, stop, step = 0, trims[0], 1
+            start, stop_inclusive, step = 0, trims[0], 1
         elif len(trims) == 2:
-            start, stop, step = trims[0], trims[1], 1
+            start, stop_inclusive, step = trims[0], trims[1], 1
         elif len(trims) == 3:
-            start, stop, step = trims[0], trims[1], trims[2]
+            start, stop_inclusive, step = trims[0], trims[1], trims[2]
         else:
             log.error(f"Invalid Trim parameter format: '{self.trim}'. Aborting.")
             return
 
-        trims_list = list(range(start, stop, step))
+        stop_for_range = stop_inclusive + 1
+        trims_list = list(range(start, stop_for_range, step))
         total_steps = len(trims_list)
-        log.info(f"Starting Trim scan from {start} to {stop-step} with step {step} ({total_steps} points).")
         
-        for i, Trim in enumerate(trims_list):
-            if self.should_stop():
-                log.warning("Stop signal received during measurement loop.")
-                break
+        if total_steps > 0:
+            log.info(f"Starting Trim scan from {trims_list[0]} to {trims_list[-1]} with step {step} ({total_steps} points).")
+        else:
+            log.warning(f"Trim range '{self.trim}' resulted in zero points. No scan will be performed.")
+        
+        try:
+            # MODIFICATION START: Set the scanning flag to True before the loop
+            self.is_scanning = True
+            # MODIFICATION END
+
+            for i, Trim in enumerate(trims_list):
+                if self.should_stop():
+                    log.warning("Stop signal received during measurement loop.")
+                    break
                 
-            self.port_sendCommand(Trim)
-            port_response = self.port_receive()
-            full_response_str = "\n".join(port_response)
-            log.info(f"Received from COM port for Trim={Trim}:\n---\n{full_response_str}\n---")
+                with self.instrument_lock:
+                    self.ser.reset_input_buffer()
 
-            with self.instrument_lock:
-                voltage = self.nanovoltmeter.voltage
-                current_temp = self._temp_get_unlocked()
+                self.port_sendCommand(Trim)
+                sleep(0.2)
+                
+                port_response = self.port_receive()
+                full_response_str = "\n".join(port_response)
+                log.info(f"Received from COM port for Trim={Trim}:\n---\n{full_response_str}\n---")
 
-            if voltage >= 9.9e37:
-                log.warning(f"Keithley 2182 is in an overload state at Trim={Trim}. Recording NaN.")
-                voltage = np.nan
-            
-            elapsed_time = time() - OverallProcedure._overall_start_time
-            
-            data = {
-                'Time (s)': elapsed_time,
-                'Temperature (K)': current_temp,
-                'Trim': Trim,
-                'Voltage (V)': voltage,
-            }
-            self.emit('results', data)
-            self.emit('progress', 100 * (i + 1) / total_steps)
-            sleep(0.1)
+                with self.instrument_lock:
+                    voltage = self.nanovoltmeter.voltage
+                    current_temp = self._temp_get_unlocked()
+
+                if voltage >= 9.9e37:
+                    log.warning(f"Keithley 2182 is in an overload state at Trim={Trim}. Recording NaN.")
+                    voltage = np.nan
+                
+                elapsed_time = time() - OverallProcedure._overall_start_time
+                
+                data = {
+                    'Time (s)': elapsed_time,
+                    'Temperature (K)': current_temp,
+                    'Trim': Trim,
+                    'Voltage (V)': voltage,
+                }
+                self.emit('results', data)
+                self.emit('progress', 100 * (i + 1) / total_steps)
+                sleep(0.1)
+
+        finally:
+            # MODIFICATION START: Reset the flag to False after the loop finishes or breaks
+            self.is_scanning = False
+            log.info("Trim scan finished. Resuming background monitoring.")
+            # MODIFICATION END
 
     def shutdown(self):
         log.info("Shutting down all instruments.")
@@ -249,13 +280,9 @@ class MainWindow(ManagedDockWindow):
         self.file_input.extensions = ["csv", "txt"]
 
     def queue(self, procedure=None):
-        # 检查Manager是否正在运行。如果不在运行，说明这是一个新的序列的开始。
         if not self.manager.is_running():
-            # 在将第一个任务添加到队列之前，设置全局起始时间。
             OverallProcedure._overall_start_time = time()
             log.info(f"A new sequence is starting. Global timer initiated.")
-        
-        # 调用父类的原始queue方法，以确保实验能被正常添加到队列中。
         super().queue(procedure=procedure)
 
 

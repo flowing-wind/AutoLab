@@ -1,11 +1,5 @@
-- "Temperature", "[298]"
--- "HoldTime", "[60]"
-
-- "Temperature", "[296]"
--- "HoldTime", "[65]"
-
-- "Temperature", "[294]"
--- "HoldTime", "[55]"
+- "Temperature", "[297]"
+-- "HoldTime", "[80]"
 
 - "Temperature", "[292]"
--- "HoldTime", "[61]"
+-- "HoldTime", "[75]"
